@@ -27,6 +27,15 @@ namespace ABC.Models.Domain
         [ForeignKey(nameof(SurveyId))]
         public virtual Survey Survey { get; set; }
         public string ClientURL { get; set; }
+        public string? passcode { get; set; }
+        public string? userIdFor { get; set; }
+
+        // 🔹 Link to SurveyFile (for file tracking)
+        public Guid? SurveyFileId { get; set; }
+        [ForeignKey(nameof(SurveyFileId))]
+        public virtual SurveyFile SurveyFile { get; set; }
+        public bool IsRecontact { get; set; } = false;
+
     }
 
 }

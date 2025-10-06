@@ -4,7 +4,10 @@ using ABC.Migrations;
 using ABC.Models.Domain;
 using ABC.Models.DTO;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using System.Data;
 using System.Linq;
@@ -17,11 +20,13 @@ namespace ABC.Repositories
         private readonly AbcDbContext dbContext;
         private readonly DataManager _dataManager;
         private readonly ClientSetting clientSetting;
-        public SurveyRepository(AbcDbContext dbContext, DataManager dataManager, IOptions<ClientSetting> clientSettingOptions)
+        private readonly IWebHostEnvironment _environment;
+        public SurveyRepository(AbcDbContext dbContext, DataManager dataManager, IOptions<ClientSetting> clientSettingOptions, IWebHostEnvironment environment)
         {
             this.dbContext = dbContext;
             this._dataManager = dataManager;
             this.clientSetting = clientSettingOptions.Value;
+            _environment = environment;
         }
         public async Task<object> GetDataOptionsAsync()
         {
@@ -174,33 +179,27 @@ namespace ABC.Repositories
         {
             try
             {
-                // Convert string UUIDs to Guid
-                var projectManagerIds = surveyDto.ProjectManagers.Select(Guid.Parse).ToList();
-                var salesManagerIds = surveyDto.SalesManagers.Select(Guid.Parse).ToList();
+                // Convert string UUIDs to Guid lists
+                var projectManagerIds = surveyDto.ProjectManagers?.Select(Guid.Parse).ToList() ?? new List<Guid>();
+                var salesManagerIds = surveyDto.SalesManagers?.Select(Guid.Parse).ToList() ?? new List<Guid>();
 
-                List<ProjectManager> projectManagers = projectManagerIds
-                    .Select(id => new ProjectManager
-                    {
-                        UserId = id.ToString(),
-                        //SurveyId = survey.Id // Assuming survey.Id is available
-                    }).ToList();
+                // Build ProjectManager & SalesManager objects (UserId stored as string as you had)
+                var projectManagers = projectManagerIds
+                    .Select(id => new ProjectManager { UserId = id.ToString() })
+                    .ToList();
 
-                // Create SalesManager objects from the salesManagerIds list
-                List<SalesManager> salesManagers = salesManagerIds
-                    .Select(id => new SalesManager
-                    {
-                        UserId = id.ToString(),
-                        //SurveyId = survey.Id // Assuming survey.Id is available
-                    }).ToList();
+                var salesManagers = salesManagerIds
+                    .Select(id => new SalesManager { UserId = id.ToString() })
+                    .ToList();
 
-
+                // Create survey object
                 var survey = new Survey
                 {
                     Id = Guid.NewGuid(),
                     Title = surveyDto.Title,
-                    Name = "PDR" + DateTime.Now.ToString("yyyyMMddHHmmss") + DateTime.Now.Millisecond.ToString(),
+                    Name = "P" + DateTime.Now.ToString("ddHHmmss") + DateTime.Now.Millisecond.ToString(),
                     Status = dbContext.MultiSelects
-                        .Where(m => m.SelectionType == "status" && m.Name == "open")
+                        .Where(m => m.SelectionType == "status" && m.Name == "draft")
                         .Select(m => m.Id)
                         .FirstOrDefault().ToString(),
                     Language = surveyDto.Language,
@@ -217,42 +216,103 @@ namespace ABC.Repositories
                     Success_Link = "",
                     Disqualification_Link = "",
                     QuotaFull_Link = "",
-                    LaunchedDate = DateOnly.FromDateTime(DateTime.Now),
-                    //EndDate = surveyDto.EndDate,
+                    LaunchedDate = DateOnly.FromDateTime(DateTime.UtcNow), // or use surveyDto.LaunchDate if provided
                     CurrencyId = surveyDto.Currency,
                     ClientIR = surveyDto.ClientIR,
                     SurveyQuota = surveyDto.SurveyQuota,
                     ClientRate = surveyDto.ClientRate,
                     IsDeleted = false,
-                    PreScreener = surveyDto.PreScreener
+                    PreScreener = surveyDto.PreScreener,
+                    UniqueLink = surveyDto.UniqueLink
                 };
 
+                // Start a transaction: create survey, partner survey, and add rate history entries atomically
+                await using var tx = await dbContext.Database.BeginTransactionAsync();
+
+                // 1) Add survey
                 dbContext.Surveys.Add(survey);
                 await dbContext.SaveChangesAsync();
-                string survey_id = survey.Id.ToString();
+                var survey_id = survey.Id.ToString();
 
-                // Add Default Partner Dynamic Research
-
-                var Partner = new PartnerSurvey
+                // 2) Add PartnerSurvey (default partner)
+                var partnerIdGuid = Guid.Parse(surveyDto.DefaultPartner);
+                var partnerSurvey = new PartnerSurvey
                 {
                     Id = Guid.NewGuid(),
-                    PartnerId = Guid.Parse(surveyDto.DefaultPartner),
-                    Rate = 0,
+                    PartnerId = partnerIdGuid,
+                    Rate = surveyDto.ClientRate,
                     AddedBy = surveyDto.CreatedById,
                     AddedOn = DateTime.UtcNow,
                     Quota = surveyDto.SurveyQuota,
-                    SurveyUuid = Guid.Parse(survey_id), // link to new survey
+                    SurveyUuid = survey.Id
                 };
-                dbContext.partnerSurveys.Add(Partner);
+                dbContext.partnerSurveys.Add(partnerSurvey);
                 await dbContext.SaveChangesAsync();
+
+                // Determine the start date for the initial rates (use LaunchedDate if you want business date)
+                DateTime startDate = DateTime.UtcNow;
+              
+
+                // 3) Close overlapping partner rates (if any) so we don't have overlapping active ranges
+                var overlappingPartnerRates = await dbContext.RateHistory
+                    .Where(r => r.EntityType == "Partner" && r.EntityId == partnerSurvey.Id
+                                && r.StartDate < startDate
+                                && (r.EndDate == null || r.EndDate >= startDate))
+                    .ToListAsync();
+
+                foreach (var prev in overlappingPartnerRates)
+                {
+                    prev.EndDate = DateTime.UtcNow;
+                    dbContext.RateHistory.Update(prev);
+                }
+
+                // 4) Insert RateHistory for Survey
+                var surveyRate = new RateHistory
+                {
+                    Id = Guid.NewGuid(),
+                    EntityType = "Survey",
+                    EntityId = survey.Id,
+                    Rate = surveyDto.ClientRate,
+                    // If you store Currency as string, you can put currency id or name here. Adjust as per your model.
+                    Currency = surveyDto.Currency?.ToString(),
+                    StartDate = startDate,
+                    EndDate = null,
+                    Note = "Initial survey rate",
+                    CreatedBy = Guid.Parse(surveyDto.CreatedById),
+                    CreatedAt = DateTime.UtcNow
+                };
+                await dbContext.RateHistory.AddAsync(surveyRate);
+
+                // 5) Insert RateHistory for Partner (initial / linked rate)
+                var partnerRate = new RateHistory
+                {
+                    Id = Guid.NewGuid(),
+                    EntityType = "Partner",
+                    EntityId = partnerSurvey.Id,
+                    Rate = surveyDto.ClientRate,
+                    Currency = surveyDto.Currency?.ToString(),
+                    StartDate = startDate,
+                    EndDate = null,
+                    Note = $"Initial partner rate for survey {survey.Id}",
+                    CreatedBy = Guid.Parse(surveyDto.CreatedById),
+                    CreatedAt = DateTime.UtcNow
+                };
+                await dbContext.RateHistory.AddAsync(partnerRate);
+
+                // save changes and commit
+                await dbContext.SaveChangesAsync();
+                await tx.CommitAsync();
 
                 return survey_id;
             }
             catch (Exception ex)
             {
-                return ex.Message.ToString();
+                // Optionally log the error here
+                return ex.Message;
             }
         }
+
+
         public async Task<bool> DeleteAsync(Guid surveyId)
         {
             try
@@ -310,6 +370,7 @@ namespace ABC.Repositories
                 survey.SurveyQuota = surveyDto.SurveyQuota;
                 survey.ClientRate = surveyDto.ClientRate;
                 survey.PreScreener = surveyDto.PreScreener;
+                survey.UniqueLink = surveyDto.UniqueLink;
 
                 // Convert string UUIDs to Guid
                 var projectManagerIds = surveyDto.ProjectManagers.Select(Guid.Parse).ToList();
@@ -378,11 +439,14 @@ namespace ABC.Repositories
         {
             try
             {
+                var survey = await dbContext.Surveys
+                    .FirstOrDefaultAsync(s => s.Id == surveyAddPartnerDto.SurveyUuid);
+
                 PartnerSurvey partnerSurvey = new PartnerSurvey();
                 partnerSurvey.Id = new Guid();
                 partnerSurvey.PartnerId = surveyAddPartnerDto.PartnerId;
                 partnerSurvey.AvailableVariable = surveyAddPartnerDto.AvailableVariable;
-                partnerSurvey.Rate = surveyAddPartnerDto.Rate;
+                //partnerSurvey.Rate = surveyAddPartnerDto.Rate;
                 partnerSurvey.AddedBy = surveyAddPartnerDto.AddedBy;
                 partnerSurvey.AddedOn = DateTime.UtcNow;
                 partnerSurvey.Quota = surveyAddPartnerDto.Quota;
@@ -398,6 +462,24 @@ namespace ABC.Repositories
                 await dbContext.AddAsync(partnerSurvey);
                 await dbContext.SaveChangesAsync();
 
+                // Insert new rate
+                var newRate = new RateHistory
+                {
+                    Id = Guid.NewGuid(),
+                    EntityType = "Partner",
+                    EntityId = partnerSurvey.Id,
+                    Rate = surveyAddPartnerDto.Rate,
+                    Currency = survey.CurrencyId,
+                    StartDate = DateTime.UtcNow,
+                    EndDate = null,
+                    Note = "Partner added",
+                    CreatedBy = null,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                await dbContext.AddAsync(newRate);
+                await dbContext.SaveChangesAsync();
+
 
 
                 return partnerSurvey.Id.ToString();
@@ -409,8 +491,9 @@ namespace ABC.Repositories
                 throw;
             }
         }
-        public async Task<object> SurveyAddResponseAsync(SurveyResponseDto surveyResponseDto)
+        public async Task<SurveyResponseResultDto> SurveyAddResponseAsync(SurveyResponseDto surveyResponseDto)
         {
+            SurveyResponseResultDto surveyResponseResultDto = new SurveyResponseResultDto();
             try
             {
                 // Fetch SurveyId and PartnerId from PartnerSurveys table
@@ -430,46 +513,109 @@ namespace ABC.Repositories
 
                 if (existingResponse != null)
                 {
-                    return new
-                    {
-                        status = "already exists",
-                        response_uuid = existingResponse.Id,
-                        response_link = existingResponse.ClientURL
-                    };
+                    surveyResponseResultDto.Status = "already exists";
+                    surveyResponseResultDto.ResponseUuid = existingResponse.Id;
+                    surveyResponseResultDto.ResponseLink = existingResponse.ClientURL;
+                    surveyResponseResultDto.Passcode = existingResponse.passcode;
                 }
 
                 var Survey = await dbContext.Surveys
                     .FirstOrDefaultAsync(s => s.Id == survey_id);
 
-                string survey_link = Survey.ClientLink;
-
-                // Create the SurveyResponse object
-                SurveyResponse surveyResponse = new SurveyResponse
+                if (Survey.UniqueLink == false)
                 {
-                    Id = Guid.NewGuid().ToString(),
-                    AddedBy = surveyResponseDto.addedby,
-                    SurveyId = partnerSurvey.SurveyUuid,
-                    PartnerId = partnerSurvey.PartnerId.ToString(),
-                    RespondentId = surveyResponseDto.RespondentId,
-                    RespondentIP = surveyResponseDto.RespondentIP,
-                    Answers = "",
-                    CreatedAt = DateTime.UtcNow,
-                    Status = "incomplete"
-                };
+                    string survey_link = Survey.ClientLink;
 
-                // Replace placeholder in client link
-                string updatedLink = Regex.Replace(survey_link, @"[\{<][^}>]+[\}>]", surveyResponseDto.RespondentId.ToString());
-                surveyResponse.ClientURL = updatedLink;
+                    // Create the SurveyResponse object
+                    SurveyResponse surveyResponse = new SurveyResponse
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        AddedBy = surveyResponseDto.addedby,
+                        SurveyId = partnerSurvey.SurveyUuid,
+                        PartnerId = partnerSurvey.PartnerId.ToString(),
+                        RespondentId = surveyResponseDto.RespondentId,
+                        RespondentIP = surveyResponseDto.RespondentIP,
+                        Answers = "",
+                        CreatedAt = DateTime.UtcNow,
+                        Status = "incomplete",
+                        passcode = Guid.NewGuid().ToString(),
+                        userIdFor = surveyResponseDto.addedby,
 
-                // Save to database
-                await dbContext.AddAsync(surveyResponse);
+                    };
+
+                    // Replace placeholder in client link
+                    string updatedLink = Regex.Replace(survey_link, @"[\{\[\<][^}\]>]+[\}\]\>]", surveyResponseDto.RespondentId.ToString());
+
+                    surveyResponse.ClientURL = updatedLink;
+
+                    // Save to database
+                    await dbContext.AddAsync(surveyResponse);
+                    await dbContext.SaveChangesAsync();
+
+                    surveyResponseResultDto.Status = "created";
+                    surveyResponseResultDto.ResponseUuid = surveyResponse.RespondentId.ToString();
+                    surveyResponseResultDto.ResponseLink = updatedLink;
+                    surveyResponseResultDto.Passcode = surveyResponse.passcode;
+                }
+                else
+                {
+                    // get survey link from database
+                    var surveyResponse = await dbContext.surveyResponses
+                            .Where(sr => sr.SurveyId == survey_id && sr.userIdFor == null)
+                            .OrderBy(sr => sr.CreatedAt)
+                            .FirstOrDefaultAsync();
+
+                    if (surveyResponse != null)
+                    {
+                        // Update the existing response with new details
+                        surveyResponse.userIdFor = surveyResponseDto.addedby;
+                        surveyResponse.ResponseDate = DateTime.UtcNow;
+                        await dbContext.SaveChangesAsync();
+
+                        surveyResponseResultDto.Status = "created";
+                        surveyResponseResultDto.ResponseUuid = surveyResponse.RespondentId.ToString();
+                        surveyResponseResultDto.ResponseLink = surveyResponse.ClientURL;
+                        surveyResponseResultDto.Passcode = surveyResponse.passcode;
+
+                    }
+                    else
+                    {
+                        surveyResponseResultDto.Status = "Not Available";
+                        surveyResponseResultDto.ResponseUuid = "";
+                        surveyResponseResultDto.ResponseLink = "";
+                        surveyResponseResultDto.Passcode = "";
+                    }
+                }
+                return surveyResponseResultDto;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in SurveyAddResponseAsync: {ex.Message}");
+                throw;
+            }
+        }
+
+        public async Task<object> SurveyResponseVerifyAsync(SurveyVerifyResponseDto surveyResponseDto)
+        {
+            try
+            {
+                // Fetch SurveyId and PartnerId from PartnerSurveys table
+                var surveyResponse1 = await dbContext.surveyResponses
+                    .FirstOrDefaultAsync(ps => ps.RespondentId == surveyResponseDto.RespondentId && ps.SurveyId.ToString() == surveyResponseDto.surveyId && ps.passcode == surveyResponseDto.PassCode && ps.Status == "incomplete");
+
+                if (surveyResponse1 == null)
+                {
+                    throw new Exception($"No entry found in Id {surveyResponseDto.RespondentId}");
+                }
+
+                surveyResponse1.RespondentIP = surveyResponseDto.RespondentIP;
+                surveyResponse1.ResponseDate = DateTime.UtcNow;
                 await dbContext.SaveChangesAsync();
 
                 return new
                 {
-                    status = "created",
-                    response_uuid = surveyResponse.Id.ToString(),
-                    response_link = updatedLink
+                    status = "verified",
+                    response_link = surveyResponse1.ClientURL,
                 };
             }
             catch (Exception ex)
@@ -490,7 +636,7 @@ namespace ABC.Repositories
 
                     // Fetch SurveyResponse entry based on uid and sid
                     var surveyResponse = await dbContext.surveyResponses
-                        .FirstOrDefaultAsync(sr => sr.RespondentId.ToLower() == uid.ToLower() && sr.SurveyId.ToString().ToLower() == sid.ToLower());
+                        .FirstOrDefaultAsync(sr => sr.RespondentId.ToLower() == uid.ToLower());
 
                     if (surveyResponse == null)
                     {
@@ -528,6 +674,7 @@ namespace ABC.Repositories
                         }
 
                         surveyResponse.AddedBy = surveyCompleteResponseDto.addedby;
+                        surveyResponse.UpdatedAt = DateTime.UtcNow;
                         // Save changes to the database
                         await dbContext.SaveChangesAsync();
                         return new SurveyResponseResult
@@ -607,17 +754,13 @@ namespace ABC.Repositories
             bool isSurveyPreScreening = false;
             try
             {
-                var partnerSurvey = await dbContext.partnerSurveys
-                    .FirstOrDefaultAsync(ps => ps.Id.ToString() == surveyId);
-
-                Guid survey_id = partnerSurvey.SurveyUuid;
                 var survey = await dbContext.Surveys
-                    .FirstOrDefaultAsync(sr => sr.Id == survey_id);
+                    .FirstOrDefaultAsync(sr => sr.Id.ToString().ToLower() == surveyId.ToLower());
 
                 if (survey != null && survey.PreScreener)
                 {
                     bool hasPreScreeners = await dbContext.SurveyPreScreeners
-                        .AnyAsync(ps => ps.SurveyId == survey_id.ToString());
+                        .AnyAsync(ps => ps.SurveyId.ToLower() == surveyId.ToLower());
 
                     isSurveyPreScreening = hasPreScreeners;
                 }
@@ -713,6 +856,7 @@ namespace ABC.Repositories
                     SurveyQuota = survey.SurveyQuota,
                     ClientRate = survey.ClientRate,
                     PreScreener = survey.PreScreener,
+                    UniqueLink = survey.UniqueLink,
                     ProjectManagers = survey.ProjectManagers.Select(pm => pm.UserId.ToString()).ToList(),
                     SalesManagers = survey.SalesManagers.Select(sm => sm.UserId.ToString()).ToList()
                 };
@@ -747,10 +891,10 @@ namespace ABC.Repositories
                 {
                     Id = Guid.NewGuid(),
                     Title = survey.Title,
-                    //Name = GenerateNextSurveyName(survey.Name),
-                    Name = "PDR" + DateTime.Now.ToString("yyyyMMddHHmmss") + DateTime.Now.Millisecond.ToString(),
+                    Name = GenerateNextSurveyName(survey.Name),
+                    //Name = "PDR" + DateTime.Now.ToString("yyyyMMddHHmmss") + DateTime.Now.Millisecond.ToString(),
                     Status = dbContext.MultiSelects
-                        .Where(m => m.SelectionType == "status" && m.Name == "open")
+                        .Where(m => m.SelectionType == "status" && m.Name == "draft")
                         .Select(m => m.Id)
                         .FirstOrDefault().ToString(),
                     Language = survey.Language,
@@ -774,7 +918,9 @@ namespace ABC.Repositories
                     SurveyQuota = survey.SurveyQuota,
                     ClientRate = survey.ClientRate,
                     IsDeleted = false,
-                    ParentId = survey.Id
+                    ParentId = survey.Id,
+                    PreScreener = survey.PreScreener,
+                    UniqueLink = survey.UniqueLink
                 };
 
 
@@ -817,16 +963,33 @@ namespace ABC.Repositories
                 return ex.Message.ToString();
             }
         }
-        public string GenerateNextSurveyName(string baseName)
+        public string GenerateNextSurveyName(string surveyName)
         {
-            // Get existing surveys with the same base name pattern
+            // 1. Get the survey by Id
+            var survey = dbContext.Surveys.FirstOrDefault(s => s.Name == surveyName);
+            if (survey == null)
+                throw new Exception($"Survey with Name {surveyName} not found");
+
+            // 2. Traverse up to the top-most parent
+            var topParent = survey;
+            while (topParent.ParentId != null)
+            {
+                var parentSurvey = dbContext.Surveys.FirstOrDefault(s => s.Id == topParent.ParentId);
+                if (parentSurvey == null)
+                    break; // safety stop if parent is missing
+                topParent = parentSurvey;
+            }
+
+            string baseName = topParent.Name;
+
+            // 3. Get all existing clone names for this base survey
             var existingNames = dbContext.Surveys
-                .Where(s => s.Name.StartsWith(baseName))
+                .Where(s => s.Name.StartsWith(baseName + "CL"))
                 .Select(s => s.Name)
                 .ToList();
 
-            // Regular expression to extract numeric suffix
-            Regex regex = new Regex($@"^{Regex.Escape(baseName)}(\d+)$");
+            // 4. Regex to extract numeric suffix after CL
+            Regex regex = new Regex($@"^{Regex.Escape(baseName)}CL(\d+)$");
 
             int maxSuffix = 0;
 
@@ -839,24 +1002,25 @@ namespace ABC.Repositories
                 }
             }
 
-            // Generate the next name with incremented suffix
-            return $"{baseName}{(maxSuffix + 1):D2}"; // Ensures 2-digit format like "01", "02", etc.
+            // 5. Always return clone name with CL + next number
+            return $"{baseName}CL{(maxSuffix + 1):D2}";
         }
 
-        public async Task<List<SurveyPreScreenerDto>> GetSurveyPreScreeningQuestAsync(string Id)
+
+        public async Task<PreScreenerSurveyDto> GetSurveyPreScreeningQuestAsync(string Id)
         {
             List<SurveyPreScreenerDto> PreScreener = new List<SurveyPreScreenerDto>();
+            PreScreenerSurveyDto surveyPreScreenerDto = null; // Declare outside so it's accessible
+
             try
             {
-                var partnerSurvey = await dbContext.partnerSurveys
-                    .FirstOrDefaultAsync(ps => ps.Id.ToString() == Id);
-
-                Guid survey_id = partnerSurvey.SurveyUuid;
-
                 // Get the list of prescreener questions for the associated survey
                 var questions = await dbContext.SurveyPreScreeners
-                    .Where(q => q.SurveyId == survey_id.ToString())
+                    .Where(q => q.SurveyId.ToLower() == Id.ToLower())
                     .ToListAsync();
+
+                var survey = await dbContext.Surveys
+                    .FirstOrDefaultAsync(q => q.Id.ToString().ToLower() == Id.ToLower());
 
                 // Map each question to the DTO
                 PreScreener = questions.Select(q => new SurveyPreScreenerDto
@@ -867,14 +1031,24 @@ namespace ABC.Repositories
                     QuestionType = q.QuestionType,
                     Option1 = q.Option1,
                 }).ToList();
+
+                surveyPreScreenerDto = new PreScreenerSurveyDto
+                {
+                    surveyPreScreenerDtos = PreScreener,
+                    SurveyId = survey?.Id.ToString(),
+                    SurveyName = survey?.Name,
+                    SurveyTitle = survey?.Title,
+                };
             }
             catch (Exception ex)
             {
                 // Optionally log exception
+                // e.g., _logger.LogError(ex, "Error fetching PreScreener Survey data");
             }
 
-            return PreScreener;
+            return surveyPreScreenerDto;
         }
+
         public async Task<bool> HasDisqualifyingAnswerAsync(List<ResponseDto> responses)
         {
             foreach (var response in responses)
@@ -1069,5 +1243,183 @@ namespace ABC.Repositories
             }
         }
 
+        public async Task<SurveyFile> GetSurveyFileAsync(SurveyFileDto surveyFileDto, string default_partner)
+        {
+            SurveyFile surveyFile;
+            /////////////////////////////////
+            // Validate file type and size
+            try
+            {
+                string allowedExtensions = ".csv,.xlsx,.xls";
+
+                var fileExtension = Path.GetExtension(surveyFileDto.File.FileName).ToLower();
+                if (!allowedExtensions.Contains(fileExtension))
+                {
+                    throw new Exception($"File type not allowed. Allowed types: {string.Join(", ", allowedExtensions)}");
+                }
+                // Generate unique filename
+                var fileName = $"{Guid.NewGuid()}{fileExtension}";
+                var uploadsFolder = Path.Combine(_environment.ContentRootPath, "uploads");
+
+                // Ensure directory exists
+                if (!Directory.Exists(uploadsFolder))
+                {
+                    Directory.CreateDirectory(uploadsFolder);
+                }
+                var filePath = Path.Combine(uploadsFolder, fileName);
+                // Save file
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await surveyFileDto.File.CopyToAsync(stream);
+                }
+                // Save file metadata to database (pseudo-code)
+                surveyFile = new SurveyFile
+                {
+                    Id = Guid.NewGuid(),
+                    SurveyId = surveyFileDto.SurveyId,
+                    FileName = fileName,
+                    FileName_show = surveyFileDto.File.FileName,
+
+                    TotalLinks = 0, // Initialize as needed
+                    UsedLinks = 0, // Initialize as needed
+                    RemainingLinks = 0, // Initialize as needed
+                    UploadedAt = DateTime.UtcNow,
+                    UploadedBy = surveyFileDto.UploadedBy
+                };
+                await dbContext.AddAsync(surveyFile);
+                await dbContext.SaveChangesAsync();
+
+                string surveyFileId = surveyFile.Id.ToString();
+
+                // access file and iterate over loop
+                // Step 2: Read CSV into DataTable
+                DataTable dt = new DataTable("surveyResponses");
+
+                // Add columns matching the table structure
+                dt.Columns.Add("Id", typeof(string));                      // nvarchar(450)
+                dt.Columns.Add("SurveyId", typeof(Guid));                  // uniqueidentifier
+                dt.Columns.Add("RespondentId", typeof(string));            // nvarchar(max)
+                dt.Columns.Add("ResponseDate", typeof(DateTime));          // datetime2(7)
+                dt.Columns.Add("Status", typeof(string));                  // nvarchar(50)
+                dt.Columns.Add("Answers", typeof(string));                 // nvarchar(max)        // nvarchar(max) nullable
+                dt.Columns.Add("PartnerId", typeof(string));               // nvarchar(max) nullable
+                dt.Columns.Add("CreatedAt", typeof(DateTime));             // datetime2(7)          // datetime2(7) nullable
+                dt.Columns.Add("AddedBy", typeof(string));                 // nvarchar(max)
+                dt.Columns.Add("ClientURL", typeof(string));               // nvarchar(max)
+                dt.Columns.Add("passcode", typeof(string));                // nvarchar(max) nullable
+                dt.Columns.Add("IsRecontact", typeof(bool));               // bit            
+                dt.Columns.Add("SurveyFileId", typeof(Guid));              // uniqueidentifier nullable// uniqueidentifier nullable
+
+                using (StreamReader sr = new StreamReader(filePath))
+                {
+                    string line;
+                    bool firstRow = true;
+                    while ((line = sr.ReadLine()) != null)
+                    {
+                        // Skip header if CSV has one
+                        if (firstRow && line.Contains("http") == false)
+                        {
+                            firstRow = false;
+                            continue;
+                        }
+
+                        // Example of how to add a row to the DataTable
+                        DataRow row = dt.NewRow();
+
+                        string[] final_url = ReplaceGuidPlaceholders(line.Trim());
+
+                        row["Id"] = Guid.NewGuid();
+                        row["SurveyId"] = surveyFileDto.SurveyId;
+                        row["RespondentId"] = final_url[1];
+                        row["ResponseDate"] = DateTime.UtcNow;
+                        row["Status"] = "incomplete";
+                        row["Answers"] = "";
+                        row["PartnerId"] = default_partner;
+                        row["CreatedAt"] = DateTime.UtcNow;
+                        row["AddedBy"] = surveyFileDto.UploadedBy;
+                        row["ClientURL"] = final_url[0];
+                        row["passcode"] = Guid.NewGuid();
+                        row["IsRecontact"] = false;
+                        row["SurveyFileId"] = surveyFileId;
+
+                        dt.Rows.Add(row);
+                    }
+                }
+                string connectionString = _dataManager.GetConnectionString();
+
+                using (SqlConnection conn = new SqlConnection(connectionString))
+                {
+                    conn.Open();
+
+                    // Step 3: Bulk Insert into SurveyLinks
+                    using (SqlBulkCopy bulkCopy = new SqlBulkCopy(conn))
+                    {
+                        bulkCopy.DestinationTableName = "surveyResponses";
+                        bulkCopy.ColumnMappings.Add("Id", "Id");
+                        bulkCopy.ColumnMappings.Add("SurveyId", "SurveyId");
+                        bulkCopy.ColumnMappings.Add("RespondentId", "RespondentId");
+                        bulkCopy.ColumnMappings.Add("ResponseDate", "ResponseDate");
+                        bulkCopy.ColumnMappings.Add("Status", "Status");
+                        bulkCopy.ColumnMappings.Add("Answers", "Answers");
+                        bulkCopy.ColumnMappings.Add("PartnerId", "PartnerId");
+                        bulkCopy.ColumnMappings.Add("CreatedAt", "CreatedAt");
+                        bulkCopy.ColumnMappings.Add("AddedBy", "AddedBy");
+                        bulkCopy.ColumnMappings.Add("ClientURL", "ClientURL");
+                        bulkCopy.ColumnMappings.Add("passcode", "passcode");
+                        bulkCopy.ColumnMappings.Add("IsRecontact", "IsRecontact");
+                        bulkCopy.ColumnMappings.Add("SurveyFileId", "SurveyFileId");
+                        bulkCopy.WriteToServer(dt);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error fetching survey data: " + ex.Message);
+            }
+            ///////////////////////////////////////////////
+            return surveyFile;
+
+        }
+        public string[] ReplaceGuidPlaceholders(string url)
+        {
+            string varstring = Guid.NewGuid().ToString();
+            string[] strings = new string[2];
+            // Pattern to find any text within curly braces
+            var regex = new Regex(@"\{([^}]+)\}");
+            strings[0] = regex.Replace(url, match => varstring);
+            strings[1] = varstring;
+
+            // Replace all occurrences with GUIDs
+            return strings;
+        }
+        public async Task<List<SurveyFile>> GetSurveyFilesAsync(string SurveyId)
+        {
+            List<SurveyFile> surveyFiles = new List<SurveyFile>();
+            try
+            {
+                surveyFiles = await dbContext.surveyFile.Where(s => s.SurveyId.ToString().ToLower() == SurveyId.ToLower()).ToListAsync();
+                foreach (var file in surveyFiles)
+                {
+                    string id = file.Id.ToString();
+                    int totalCount = await dbContext.surveyResponses
+                        .Where(sr => sr.SurveyFileId.ToString() == id)
+                        .CountAsync();
+
+                    // With the following code:
+                    int usedCount = await dbContext.surveyResponses
+                        .Where(sr => sr.SurveyFileId.ToString() == id && sr.userIdFor != null)
+                        .CountAsync();
+
+                    file.TotalLinks = totalCount; // Initialize as needed
+                    file.UsedLinks = usedCount; // Initialize as needed
+                    file.RemainingLinks = totalCount - usedCount; // Initialize as needed
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error fetching survey data: " + ex.Message);
+            }
+            return surveyFiles;
+        }
     }
 }

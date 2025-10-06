@@ -1,13 +1,15 @@
 using ABC.Data;
 using ABC.Mappings;
+using ABC.Models.Domain;
 using ABC.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using System.Text;
 using Microsoft.OpenApi.Models;
-using ABC.Models.Domain;
+using Rotativa.AspNetCore;
+using System.Text;
+using System.IO; // <-- added
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,7 +21,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowReactApp",
         policy =>
         {
-            policy.WithOrigins("http://localhost:3000", "https://reward.prodynamicresearch.com", "https://maxfusion.space", "http://localhost:5173", "https://prodynamicresearch.com") // React app URL
+            policy.WithOrigins("http://localhost:3000", "https://reward.prodynamicresearch.com", "https://maxfusion.space", "http://localhost:5173", "https://portal.prodynamicresearch.com") // React app URL
                   .AllowAnyHeader()
                   .AllowAnyMethod();
         });
@@ -87,8 +89,14 @@ builder.Services.AddScoped<IUsersRepository, UsersRepository>();
 builder.Services.AddScoped<ISurveyRepository, SurveyRepository>();
 builder.Services.AddScoped<DataManager>();
 builder.Services.AddScoped<ClientSetting>();
+builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
+builder.Services.AddScoped<IMultiselectRepository, MultiselectRepository>();
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("EmailSettings"));
 builder.Services.AddTransient<IEmailService, EmailService>();
+builder.Services.AddScoped<ICountryLanguageRepository, CountryLanguageRepository>();
+builder.Services.AddScoped<ICountryRepository, CountryRepository>();
+builder.Services.AddScoped<IRateRepository, RateRepository>();
+builder.Services.AddScoped<IInvoiceRepository, InvoiceRepository>();
 
 
 builder.Services.AddAutoMapper(typeof(AutomapperProfiles));
@@ -111,6 +119,44 @@ builder.Services.Configure<ClientSetting>(builder.Configuration.GetSection("Clie
 
 var app = builder.Build();
 
+// ------------ Rotativa configuration (IMPORTANT) ------------
+var env = app.Environment;
+
+// preferred location: {ContentRoot}/Rotativa
+var rotativaFolder = Path.Combine(env.ContentRootPath, "Rotativa");
+
+// fallback: {WebRoot}/Rotativa (if you placed it in wwwroot/Rotativa)
+var webRootAlt = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
+var rotativaAlt = Path.Combine(webRootAlt, "Rotativa");
+
+if (!Directory.Exists(rotativaFolder))
+{
+    if (Directory.Exists(rotativaAlt))
+    {
+        rotativaFolder = rotativaAlt;
+    }
+    else
+    {
+        // Helpful console warning — the app will continue to run but Rotativa will fail until the folder is present.
+        Console.WriteLine($"[Warning] Rotativa folder not found. Expected at '{rotativaFolder}' or '{rotativaAlt}'. Place wkhtmltopdf binaries there and restart the app.");
+    }
+}
+
+// after determining rotativaFolder variable as in your file
+if (!Directory.Exists(rotativaFolder) && Directory.Exists(rotativaAlt))
+{
+    rotativaFolder = rotativaAlt;
+}
+
+if (!Directory.Exists(rotativaFolder))
+{
+    Console.WriteLine($"[Warning] Rotativa folder not found. Expected at '{rotativaFolder}' or '{rotativaAlt}'. Place wkhtmltopdf binaries there and restart the app.");
+}
+
+// Use string overload (works with versions that expect a path)
+RotativaConfiguration.Setup(rotativaFolder);
+// -----------------------------------------------------------
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -119,6 +165,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// serve static files (optional, useful if you put Rotativa under wwwroot)
+app.UseStaticFiles();
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseCors("AllowReactApp"); // Enable CORS for the defined policy

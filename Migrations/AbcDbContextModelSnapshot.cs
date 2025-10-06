@@ -130,6 +130,30 @@ namespace ABC.Migrations
                     b.ToTable("Countries");
                 });
 
+            modelBuilder.Entity("ABC.Models.Domain.CountryLanguage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CountryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("MultiSelectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MultiSelectId");
+
+                    b.HasIndex("CountryId", "MultiSelectId");
+
+                    b.ToTable("CountryLanguages");
+                });
+
             modelBuilder.Entity("ABC.Models.Domain.Currency", b =>
                 {
                     b.Property<Guid>("Id")
@@ -237,6 +261,172 @@ namespace ABC.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("EmailTemplate");
+                });
+
+            modelBuilder.Entity("ABC.Models.Domain.InvoiceMaster", b =>
+                {
+                    b.Property<Guid>("InvoiceId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AccountEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<decimal>("AdditionalAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<string>("AddrLine1")
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<string>("AddrLine2")
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<string>("AddrLine3")
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<string>("ClientSurveyName")
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CurrencyCode")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("DiscountTotal")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<DateTime?>("DueDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("GrandTotal")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<DateTime>("InvoiceDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("InvoiceNumber")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PONumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("PaymentDone")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("PaymentStatus")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("PaymentTermsDueDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("SurveyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("TaxTotal")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ZipCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("InvoiceId");
+
+                    b.HasIndex("InvoiceNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_InvoiceMaster_InvoiceNumber");
+
+                    b.HasIndex("SurveyId")
+                        .HasDatabaseName("IX_InvoiceMaster_SurveyId");
+
+                    b.ToTable("InvoiceMaster", (string)null);
+                });
+
+            modelBuilder.Entity("ABC.Models.Domain.InvoiceTransaction", b =>
+                {
+                    b.Property<Guid>("InvoiceTxId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("DiscountAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("LineNo")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("LineTotal")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<decimal>("Quantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(1m);
+
+                    b.Property<decimal>("TaxAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<decimal>("UnitCost")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.HasKey("InvoiceTxId");
+
+                    b.HasIndex("InvoiceId", "LineNo")
+                        .HasDatabaseName("IX_InvoiceTransaction_InvoiceId_LineNo");
+
+                    b.ToTable("InvoiceTransaction", (string)null);
                 });
 
             modelBuilder.Entity("ABC.Models.Domain.MailQueue", b =>
@@ -383,6 +573,54 @@ namespace ABC.Migrations
                     b.ToTable("projectManagers");
                 });
 
+            modelBuilder.Entity("ABC.Models.Domain.RateHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("EndDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("EntityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<decimal>("Rate")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("StartDate")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EntityType", "EntityId", "StartDate");
+
+                    b.ToTable("RateHistory");
+                });
+
             modelBuilder.Entity("ABC.Models.Domain.Region", b =>
                 {
                     b.Property<Guid>("Id")
@@ -467,6 +705,9 @@ namespace ABC.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<DateTime>("CreatedOn")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("CurrencyId")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -526,6 +767,9 @@ namespace ABC.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("UniqueLink")
+                        .HasColumnType("bit");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedById");
@@ -533,6 +777,47 @@ namespace ABC.Migrations
                     b.HasIndex("ParentId");
 
                     b.ToTable("Surveys");
+                });
+
+            modelBuilder.Entity("ABC.Models.Domain.SurveyFile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("FileName_show")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("RemainingLinks")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SurveyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("TotalLinks")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UploadedBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("UsedLinks")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SurveyId");
+
+                    b.ToTable("surveyFile");
                 });
 
             modelBuilder.Entity("ABC.Models.Domain.SurveyPreScreener", b =>
@@ -603,6 +888,9 @@ namespace ABC.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<bool>("IsRecontact")
+                        .HasColumnType("bit");
+
                     b.Property<string>("PartnerId")
                         .HasColumnType("nvarchar(max)");
 
@@ -621,13 +909,24 @@ namespace ABC.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<Guid?>("SurveyFileId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid>("SurveyId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("passcode")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("userIdFor")
+                        .HasColumnType("nvarchar(max)");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("SurveyFileId");
 
                     b.HasIndex("SurveyId");
 
@@ -1118,6 +1417,36 @@ namespace ABC.Migrations
                     b.Navigation("CreatedBy");
                 });
 
+            modelBuilder.Entity("ABC.Models.Domain.CountryLanguage", b =>
+                {
+                    b.HasOne("ABC.Models.Domain.Country", "Country")
+                        .WithMany("CountryLanguages")
+                        .HasForeignKey("CountryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ABC.Models.Domain.MultiSelect", "Language")
+                        .WithMany("CountryLanguages")
+                        .HasForeignKey("MultiSelectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Country");
+
+                    b.Navigation("Language");
+                });
+
+            modelBuilder.Entity("ABC.Models.Domain.InvoiceTransaction", b =>
+                {
+                    b.HasOne("ABC.Models.Domain.InvoiceMaster", "InvoiceMaster")
+                        .WithMany("Transactions")
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("InvoiceMaster");
+                });
+
             modelBuilder.Entity("ABC.Models.Domain.ProjectManager", b =>
                 {
                     b.HasOne("ABC.Models.Domain.Survey", "Survey")
@@ -1173,7 +1502,7 @@ namespace ABC.Migrations
                     b.Navigation("ParentSurvey");
                 });
 
-            modelBuilder.Entity("ABC.Models.Domain.SurveyResponse", b =>
+            modelBuilder.Entity("ABC.Models.Domain.SurveyFile", b =>
                 {
                     b.HasOne("ABC.Models.Domain.Survey", "Survey")
                         .WithMany()
@@ -1182,6 +1511,23 @@ namespace ABC.Migrations
                         .IsRequired();
 
                     b.Navigation("Survey");
+                });
+
+            modelBuilder.Entity("ABC.Models.Domain.SurveyResponse", b =>
+                {
+                    b.HasOne("ABC.Models.Domain.SurveyFile", "SurveyFile")
+                        .WithMany()
+                        .HasForeignKey("SurveyFileId");
+
+                    b.HasOne("ABC.Models.Domain.Survey", "Survey")
+                        .WithMany()
+                        .HasForeignKey("SurveyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Survey");
+
+                    b.Navigation("SurveyFile");
                 });
 
             modelBuilder.Entity("ABC.Models.Domain.UserInfo", b =>
@@ -1260,6 +1606,21 @@ namespace ABC.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("ABC.Models.Domain.Country", b =>
+                {
+                    b.Navigation("CountryLanguages");
+                });
+
+            modelBuilder.Entity("ABC.Models.Domain.InvoiceMaster", b =>
+                {
+                    b.Navigation("Transactions");
+                });
+
+            modelBuilder.Entity("ABC.Models.Domain.MultiSelect", b =>
+                {
+                    b.Navigation("CountryLanguages");
                 });
 
             modelBuilder.Entity("ABC.Models.Domain.Survey", b =>

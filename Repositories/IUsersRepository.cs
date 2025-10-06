@@ -15,5 +15,6 @@ namespace ABC.Repositories
         Task<UserProfile> AddUserProfileAsync(RegisterUserDto registerUserDto, string AspNetUserId);
         Task<MailQueue> AddEmailRegisterUserAsync(string Email, string AspNetUserId);
         Task<UserProfile> GetUserProfileAsync(string user_id);
+        Task<UserAdminProfileDto> GetAdminProfileAsync(string user_id);
     }
 }

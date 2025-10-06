@@ -26,5 +26,7 @@ namespace ABC.Models.Domain
         [Required]
         [MaxLength(10)]
         public string ShortCode { get; set; }
+        // Navigation
+        public ICollection<CountryLanguage> CountryLanguages { get; set; } = new List<CountryLanguage>();
     }
 }

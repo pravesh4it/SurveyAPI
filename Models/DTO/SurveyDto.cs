@@ -21,6 +21,9 @@ namespace ABC.Models.DTO
         public decimal CPI { get; set; }
         public int VendorsCount { get; set; }
         public int CloneCount { get; set; }
-
+        public string LOI { get; set; }
+        public string IR { get; set; }
+        public string LastCompleted { get; set; } // Nullable to allow for no completion date
+        public int DropOuts { get; set; } // Number of dropouts
     }
 }

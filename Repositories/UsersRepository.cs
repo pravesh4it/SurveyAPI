@@ -1,6 +1,7 @@
 ﻿using ABC.Data;
 using ABC.Models.Domain;
 using ABC.Models.DTO;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System.Data;
@@ -175,7 +176,7 @@ namespace ABC.Repositories
             {
                 var profile = new UserProfile
                 {
-                    Id= new Guid(),
+                    Id = new Guid(),
                     UserId = AspNetUserId,
                     FullName = dto.PersonalInfo.Name,
                     Dob = dto.PersonalInfo.Dob,
@@ -218,7 +219,7 @@ namespace ABC.Repositories
                     AcceptDataProcessing = dto.Consent.DataProcessing,
                     SubscribeNewsletter = dto.Consent.Newsletter,
                     ProfileURL = "default.png",
-                    CreatedOn= DateTime.Now
+                    CreatedOn = DateTime.Now
                 };
 
                 dbContext.UserProfiles.Add(profile);
@@ -239,5 +240,42 @@ namespace ABC.Repositories
         {
             return await dbContext.UserProfiles.FirstOrDefaultAsync(u => u.UserId == user_id);
         }
+        public async Task<UserAdminProfileDto?> GetAdminProfileAsync(string userId)
+        {
+            // 1) Load the basic profile (read-only)
+            var u = await dbContext.UserInfoes
+                .AsNoTracking()
+                .Include(x => x.Designation)
+                .Include(x => x.Department)
+                .FirstOrDefaultAsync(x => x.AspNetUsersId == userId);
+
+            if (u == null) return null;
+
+            // 2) Load roles via Identity join
+            var roles = await (
+                from ur in dbContext.UserRoles.AsNoTracking()
+                join r in dbContext.Roles.AsNoTracking() on ur.RoleId equals r.Id
+                where ur.UserId == userId
+                select new RoleDto
+                {
+                    Id = r.Id,
+                    Name = r.Name
+                }
+            ).ToListAsync();
+
+            // 3) Map to DTO
+            return new UserAdminProfileDto
+            {
+                FirstName = u.FirstName,
+                LastName = u.LastName,
+                DesignationName = u.Designation != null ? u.Designation.Name : null,
+                DepartmentName = u.Department != null ? u.Department.Name : null,
+                ContactNo = u.ContactNo,
+                Roles = roles,
+                Email= dbContext.Users.FirstOrDefault(s=>s.Id.ToString()==u.AspNetUsersId.ToString()).UserName
+            };
+        }
+
+        
     }
 }

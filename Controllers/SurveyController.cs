@@ -60,7 +60,7 @@ namespace ABC.Controllers
         }
         // POST: api/Survey/create-survey
         [HttpPut("update-survey/{id}")]
-        public async Task<IActionResult> UpdateSurvey(Guid id,[FromBody] SurveyAddDto surveyDto)
+        public async Task<IActionResult> UpdateSurvey(Guid id, [FromBody] SurveyAddDto surveyDto)
         {
             if (surveyDto == null)
             {
@@ -121,12 +121,38 @@ namespace ABC.Controllers
 
             try
             {
-                var responseobject = await surveyRepository.SurveyAddResponseAsync(surveyResponseDto);
+                SurveyResponseResultDto surveyResponseResultDto = await surveyRepository.SurveyAddResponseAsync(surveyResponseDto);
+                if (surveyResponseResultDto.Status == "created")
+                {
+                    return Ok(surveyResponseResultDto); // success
+                }
+                else
+                {
+                    return BadRequest(new { message = surveyResponseResultDto.Status, details = surveyResponseResultDto.Status });
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, $"Error saving data: {ex.Message}");
+            }
+        }
+
+        [HttpPost("verify-surveyresponse")]
+        public async Task<IActionResult> SurveyResponseVerifyAsync([FromBody] SurveyVerifyResponseDto surveyVerifyResponseDto)
+        {
+            if (surveyVerifyResponseDto == null)
+            {
+                return BadRequest("Invalid survey partner data.");
+            }
+
+            try
+            {
+                var responseobject = await surveyRepository.SurveyResponseVerifyAsync(surveyVerifyResponseDto);
 
                 // You can cast it as dynamic to access properties without needing a class
                 var status = ((dynamic)responseobject).status as string;
 
-                if (status == "created")
+                if (status == "verified")
                 {
                     return Ok(responseobject); // success
                 }
@@ -177,7 +203,7 @@ namespace ABC.Controllers
             {
                 var responseobject = await surveyRepository.SurveyCompleteResponseAsync(surveyCompleteResponseDto);
                 // You can now access result like this:
-                if (responseobject.Status== "Error")
+                if (responseobject.Status == "Error")
                 {
                     return BadRequest(responseobject.Message);
                 }
@@ -379,5 +405,32 @@ namespace ABC.Controllers
             }
         }
 
+        [HttpPost("upload-survey-csv")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadFile([FromForm] SurveyFileDto surveyFileDto)
+        {
+            if (surveyFileDto == null || surveyFileDto.File == null)
+            {
+                return BadRequest("Invalid file data.");
+            }
+
+            try
+            {
+                string default_partner = clientSetting.Default;
+                var responseObject = await surveyRepository.GetSurveyFileAsync(surveyFileDto, default_partner);
+                return Ok(responseObject);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, $"Error uploading file: {ex.Message}");
+            }
+        }
+
+        [HttpGet("survey-csvfile/{id}")]
+        public async Task<IActionResult> GetSurveyFiles(string id)
+        {
+            var data = await surveyRepository.GetSurveyFilesAsync(id);
+            return Ok(data);
+        }
     }
 }

@@ -74,6 +74,23 @@ namespace ABC.Controllers
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
+        [HttpGet("admin-profile/{user_id}")]
+        public async Task<IActionResult> GetAdminProfile(string user_id)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                    return BadRequest("Invalid model object");
+
+                var userProfile = await _usersRepository.GetAdminProfileAsync(user_id);
+                return Ok(userProfile);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
+        }
+
 
     }
 }

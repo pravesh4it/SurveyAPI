@@ -5,6 +5,7 @@
         public string Title { get; set; }
         public string Country { get; set; }
         public string Language { get; set; }
+        public string[] Languages { get; set; }
         public int? Completes { get; set; }
         public int LengthOfSurvey { get; set; }
         public int? Incidence { get; set; }
@@ -21,6 +22,7 @@
         public decimal ClientRate { get; set; }
         public int SurveyQuota { get; set; }
         public bool PreScreener { get; set; }
+        public bool UniqueLink {  get; set; }
         public string? DefaultPartner { get; set; }
 
     }

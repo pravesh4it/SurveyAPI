@@ -24,5 +24,7 @@ namespace ABC.Models.Domain
         [Required]
         [DefaultValue("")]
         public string SelectionType { get; set; }
+        // Navigation
+        public ICollection<CountryLanguage> CountryLanguages { get; set; } = new List<CountryLanguage>();
     }
 }

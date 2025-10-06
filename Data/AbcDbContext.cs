@@ -162,17 +162,93 @@ namespace ABC.Data
                 .HasForeignKey(sm => sm.SurveyId)
                 .OnDelete(DeleteBehavior.Restrict); // Avoid cascade delete
 
-            //modelBuilder.Entity<ProjectManager>()
-            //    .HasOne<Survey>()
-            //    .WithMany(s => s.ProjectManagers)
-            //    .HasForeignKey(pm => pm.SurveyId)
-            //    .OnDelete(DeleteBehavior.Cascade);
+            modelBuilder.Entity<CountryLanguage>(entity =>
+            {
+                entity.HasIndex(cl => new { cl.CountryId, cl.MultiSelectId }).IsUnique(false);
 
-            //modelBuilder.Entity<SalesManager>()
-            //    .HasOne<Survey>()
-            //    .WithMany(s => s.SalesManagers)
-            //    .HasForeignKey(sm => sm.SurveyId)
-            //    .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(cl => cl.Country)
+                      .WithMany(c => c.CountryLanguages)
+                      .HasForeignKey(cl => cl.CountryId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(cl => cl.Language)
+                      .WithMany(ms => ms.CountryLanguages)
+                      .HasForeignKey(cl => cl.MultiSelectId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+            modelBuilder.Entity<RateHistory>(b =>
+            {
+                b.HasKey(x => x.Id);
+                b.Property(x => x.EntityType).IsRequired().HasMaxLength(100);
+                b.Property(x => x.Currency).HasMaxLength(50);
+                b.Property(x => x.Rate).HasColumnType("decimal(18,2)");
+                b.Property(x => x.Note).HasMaxLength(1000);
+                b.Property(x => x.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+                b.HasIndex(x => new { x.EntityType, x.EntityId, x.StartDate });
+            });
+            // InvoiceMaster
+            modelBuilder.Entity<InvoiceMaster>(b =>
+            {
+                b.ToTable("InvoiceMaster");
+
+                b.HasKey(x => x.InvoiceId);
+                b.Property(x => x.InvoiceNumber)
+                    .HasMaxLength(32)
+                    .IsRequired();
+
+                b.Property(x => x.AccountEmail)
+                    .HasMaxLength(256)
+                    .IsRequired();
+
+                b.Property(x => x.ClientSurveyName).HasMaxLength(250);
+                b.Property(x => x.PONumber).HasMaxLength(100);
+                b.Property(x => x.AddrLine1).HasMaxLength(250);
+                b.Property(x => x.AddrLine2).HasMaxLength(250);
+                b.Property(x => x.AddrLine3).HasMaxLength(250);
+                b.Property(x => x.ZipCode).HasMaxLength(20);
+
+                // numeric columns
+                b.Property(x => x.GrandTotal).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+                b.Property(x => x.TaxTotal).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+                b.Property(x => x.DiscountTotal).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+                b.Property(x => x.AdditionalAmount).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+
+                // defaults at DB level if wanted (SQL Server): SYSUTCDATETIME()
+                b.Property(x => x.CreatedAt)
+                 .HasColumnType("datetime2")
+                 .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                // unique index on InvoiceNumber
+                b.HasIndex(x => x.InvoiceNumber).IsUnique().HasDatabaseName("IX_InvoiceMaster_InvoiceNumber");
+
+                // If you often query by SurveyId:
+                b.HasIndex(x => x.SurveyId).HasDatabaseName("IX_InvoiceMaster_SurveyId");
+            });
+
+            // InvoiceTransaction
+            modelBuilder.Entity<InvoiceTransaction>(b =>
+            {
+                b.ToTable("InvoiceTransaction");
+
+                b.HasKey(x => x.InvoiceTxId);
+
+                b.Property(x => x.LineNo).IsRequired();
+                b.Property(x => x.Quantity).HasColumnType("decimal(18,4)").HasDefaultValue(1m);
+                b.Property(x => x.UnitCost).HasColumnType("decimal(18,4)").HasDefaultValue(0m);
+                b.Property(x => x.LineTotal).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+                b.Property(x => x.TaxAmount).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+                b.Property(x => x.DiscountAmount).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+                b.Property(x => x.CreatedAt)
+                 .HasColumnType("datetime2")
+                 .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                b.HasOne(x => x.InvoiceMaster)
+                 .WithMany(m => m.Transactions)
+                 .HasForeignKey(x => x.InvoiceId)
+                 .OnDelete(DeleteBehavior.Cascade); // change if you prefer Restrict/NoAction
+
+                b.HasIndex(x => new { x.InvoiceId, x.LineNo }).HasDatabaseName("IX_InvoiceTransaction_InvoiceId_LineNo");
+            });
 
         }
 
@@ -194,6 +270,11 @@ namespace ABC.Data
         public DbSet<SurveyPreScreener> SurveyPreScreeners { get; set; }
         public DbSet<SurveyResponsesPreScreener> SurveyResponsesPreScreeners { get; set; }
         public DbSet<UserProfile> UserProfiles { get; set; }
+        public DbSet<SurveyFile> surveyFile { get; set; }
+        public DbSet<CountryLanguage> CountryLanguages { get; set; }
+        public DbSet<RateHistory> RateHistory { get; set; }
+        public DbSet<InvoiceMaster> InvoiceMasters { get; set; } = null!;
+        public DbSet<InvoiceTransaction> InvoiceTransactions { get; set; } = null!;
     }
 
 

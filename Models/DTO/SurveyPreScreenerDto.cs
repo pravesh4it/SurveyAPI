@@ -9,6 +9,5 @@
             public string Question { get; set; }
             public string Option1 { get; set; }
            
-        
     }
 }

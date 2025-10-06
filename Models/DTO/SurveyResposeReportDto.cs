@@ -8,6 +8,10 @@
             public string RespondentIP { get; set; }
             public string Status { get; set; }
             public string PartnerName { get; set; }
-            public string SurveyName { get; set; }   
+            public string SurveyName { get; set; } 
+            public DateTime? CreatedDate { get; set; }
+            public DateTime? CompletedDate { get; set; }
+
+            public string LOI { get; set; }
     }
 }

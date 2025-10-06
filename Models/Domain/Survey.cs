@@ -52,7 +52,9 @@ namespace ABC.Models.Domain
         public decimal ClientRate { get; set; }
         public int SurveyQuota { get; set; }
         public bool PreScreener { get; set; }
+        public bool UniqueLink { get; set; }
         public bool IsDeleted { get; set; }
+        public DateTime CreatedOn { get; set; }= DateTime.UtcNow; // Record creation timestamp
 
         // Navigation for children (optional)
         public virtual ICollection<Survey> ClonedSurveys { get; set; }

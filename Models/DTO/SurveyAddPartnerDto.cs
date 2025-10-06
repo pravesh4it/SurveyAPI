@@ -17,21 +17,10 @@ namespace ABC.Models.DTO
 
         [MaxLength(500)]
         public string AvailableVariable { get; set; } // Optional variable, max length for safety
-
-        [Required]
-        [Url]
         public string? PartnerSuccessLink { get; set; } // URL for partner success
-
-        [Url]
         public string? PartnerDisqualificationLink { get; set; } // Optional URL for disqualification
-
-        [Url]
         public string? PartnerQuotaLink { get; set; } // Optional URL for quota
-
-        [Url]
         public string? PausedLink { get; set; } // Optional URL for paused state
-
-        [Url]
         public string? SecurityFailLink { get; set; } // Optional URL for security fail
 
         [Required]

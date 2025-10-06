@@ -310,5 +310,18 @@ namespace ABC.Controllers
             }
             return BadRequest("something went wrong");
         }
+        [HttpPost]
+        // post :// api/auth/login
+        [Route("change-password")]
+        public async Task<IActionResult> ChangePasswordAsync([FromBody] PasswordChangeRequestDto passwordChangeRequestDto)
+        {
+            var user = await userManager.FindByIdAsync(passwordChangeRequestDto.Id) ?? throw new Exception("User not found");
+            var result = await userManager.ChangePasswordAsync(user, passwordChangeRequestDto.OldPassword, passwordChangeRequestDto.NewPassword);
+            if (!result.Succeeded)
+            {
+                return BadRequest(string.Join("; ", result.Errors.Select(e => e.Description)));
+            }
+            return Ok(true);
+        }
     }
 }

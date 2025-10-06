@@ -27,11 +27,17 @@
         public string DisqualificationLink { get; set; }
         public string QuotaFullLink { get; set; }
         public string CurrencySymbol { get; set; }
+        public string CurrencyId { get; set; }
+        public string CurrencyName { get; set; }
         public string MarginPercentage { get; set; }
         public string TotalProfit { get; set; }
         public string DropsPercentage { get; set; }
         public bool PreScreener { get; set; }
+        public bool UniqueLink { get; set; }
         public string Link { get; set; }
+        public string LOI { get; set; }
+        public string IR { get; set; }
+
 
     }
 }

@@ -24,6 +24,7 @@
         public decimal ClientRate { get; set; }
         public int SurveyQuota { get; set; }
         public bool PreScreener { get; set; }
+        public bool UniqueLink {  get; set; }
 
     }
 }
