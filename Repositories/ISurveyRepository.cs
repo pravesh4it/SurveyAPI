@@ -11,7 +11,7 @@ namespace ABC.Repositories
         Task<string> UpdateAsync(Guid Id, SurveyAddDto surveyDto);
         Task<bool> DeleteAsync(Guid clientId);
         Task<Client> GetClentAsync(Guid clientId);
-        Task<string> SurveyAddPartnerAsync(SurveyAddPartnerDto surveyAddPartnerDto);
+        Task<SurveyAddPartnerResponseDto> SurveyAddPartnerAsync(SurveyAddPartnerDto surveyAddPartnerDto);
         Task<SurveyViewDto> GetSurveyClientPartnersAsync(Guid Id);
         Task<List<SurveyDto>> GetSurveyListAsync();
         Task<List<PartnerSurveyDto>> GetSurveyPartnersListAsync(Guid Id);
@@ -20,7 +20,7 @@ namespace ABC.Repositories
         Task<SurveyResponseResult> SurveyCompleteResponseAsync(SurveyCompleteResponseDto surveyCompleteResponseDto);
         Task<object> GetSurveyReportAsync(string surveyId);
         Task<SurveyEditDto> GetSurveyByIdAsync(Guid surveyId);
-        Task<string> CloneAsync(CloneSurveyDto cloneSurveyDto);
+        Task<List<Guid>> CloneAsync(CloneSurveyDto cloneSurveyDto);
         Task<object> GetSurveyPreScreeningAsync(string surveyId);
         Task<object> GetIsSurveyPreScreeningAsync(string surveyId);
         Task<PreScreenerSurveyDto> GetSurveyPreScreeningQuestAsync(string Id);

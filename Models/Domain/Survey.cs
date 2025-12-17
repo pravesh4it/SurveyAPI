@@ -10,6 +10,7 @@ namespace ABC.Models.Domain
         public Guid Id { get; set; } // Primary Key
 
         // Self-referencing foreign key
+        public int AutoNumber { get; set; }   // New auto-increment-like field
         public Guid? ParentId { get; set; }
 
         [ForeignKey("ParentId")]

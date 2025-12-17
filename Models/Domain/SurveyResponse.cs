@@ -36,6 +36,9 @@ namespace ABC.Models.Domain
         public virtual SurveyFile SurveyFile { get; set; }
         public bool IsRecontact { get; set; } = false;
 
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        public int Gid { get; set; }   // ✅ Auto-increment
+
     }
 
 }

@@ -7,6 +7,7 @@ namespace ABC.Models.Domain
         [Key]
         public Guid Id { get; set; } // Unique identifier
         public Guid PartnerId { get; set; } // Identifier for the partner
+        public int AutoNumber { get; set; }   // New auto-increment-like field
         public decimal Rate { get; set; } // Rate, assuming it's a monetary value
         public int Quota { get; set; }
         public string? AvailableVariable { get; set; } // Available variable, adjust type as needed

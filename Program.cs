@@ -7,9 +7,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using Rotativa.AspNetCore;
 using System.Text;
-using System.IO; // <-- added
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -57,10 +55,8 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-
 builder.Services.AddDbContext<AbcDbContext>(options =>
 options.UseSqlServer(builder.Configuration.GetConnectionString("PDRDb")));
-
 
 builder.Services.AddIdentityCore<IdentityUser>()
     .AddRoles<IdentityRole>()
@@ -78,8 +74,6 @@ builder.Services.Configure<IdentityOptions>(options =>
     options.Password.RequiredUniqueChars = 1;
 
 });
-
-
 
 builder.Services.AddScoped<IRegionRepository, RegionRepository>();
 builder.Services.AddScoped<ItokenRepository, TokenRepository>();
@@ -116,47 +110,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.Configure<ClientSetting>(builder.Configuration.GetSection("ClientSetting"));
-
 var app = builder.Build();
-
-// ------------ Rotativa configuration (IMPORTANT) ------------
-var env = app.Environment;
-
-// preferred location: {ContentRoot}/Rotativa
-var rotativaFolder = Path.Combine(env.ContentRootPath, "Rotativa");
-
-// fallback: {WebRoot}/Rotativa (if you placed it in wwwroot/Rotativa)
-var webRootAlt = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
-var rotativaAlt = Path.Combine(webRootAlt, "Rotativa");
-
-if (!Directory.Exists(rotativaFolder))
-{
-    if (Directory.Exists(rotativaAlt))
-    {
-        rotativaFolder = rotativaAlt;
-    }
-    else
-    {
-        // Helpful console warning — the app will continue to run but Rotativa will fail until the folder is present.
-        Console.WriteLine($"[Warning] Rotativa folder not found. Expected at '{rotativaFolder}' or '{rotativaAlt}'. Place wkhtmltopdf binaries there and restart the app.");
-    }
-}
-
-// after determining rotativaFolder variable as in your file
-if (!Directory.Exists(rotativaFolder) && Directory.Exists(rotativaAlt))
-{
-    rotativaFolder = rotativaAlt;
-}
-
-if (!Directory.Exists(rotativaFolder))
-{
-    Console.WriteLine($"[Warning] Rotativa folder not found. Expected at '{rotativaFolder}' or '{rotativaAlt}'. Place wkhtmltopdf binaries there and restart the app.");
-}
-
-// Use string overload (works with versions that expect a path)
-RotativaConfiguration.Setup(rotativaFolder);
-// -----------------------------------------------------------
-
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {

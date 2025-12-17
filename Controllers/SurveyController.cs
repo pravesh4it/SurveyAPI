@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Org.BouncyCastle.Crypto;
 
 namespace ABC.Controllers
 {
@@ -89,25 +90,26 @@ namespace ABC.Controllers
         public async Task<IActionResult> SurveyAddPartner([FromBody] SurveyAddPartnerDto surveyAddPartnerDto)
         {
             if (surveyAddPartnerDto == null)
-            {
                 return BadRequest("Invalid survey partner data.");
-            }
+
             try
             {
-                string survey_id = await surveyRepository.SurveyAddPartnerAsync(surveyAddPartnerDto);
-                // Check if survey_id is a valid GUID
-                if (Guid.TryParse(survey_id, out Guid parsedSurveyId))
+                var result = await surveyRepository
+                    .SurveyAddPartnerAsync(surveyAddPartnerDto);
+
+                return Ok(new
                 {
-                    return Ok(new { Message = "Survey partner added successfully", survey_id = parsedSurveyId });
-                }
-                else
-                {
-                    return BadRequest(new { Message = "Failed to add survey partner." });
-                }
+                    Message = "Survey partner added successfully",
+                    partnerSurveyId = result.PartnerSurveyId,
+                    autoNumber = result.AutoNumber
+                });
             }
             catch (Exception ex)
             {
-                return StatusCode(StatusCodes.Status500InternalServerError, $"Error saving data: {ex.Message}");
+                return StatusCode(
+                    StatusCodes.Status500InternalServerError,
+                    new { Message = "Error saving data", Details = ex.Message }
+                );
             }
         }
 
@@ -238,16 +240,13 @@ namespace ABC.Controllers
             }
             try
             {
-                string survey_id = await surveyRepository.CloneAsync(cloneSurveyDto);
+                var survey_ids = await surveyRepository.CloneAsync(cloneSurveyDto);
                 // Check if survey_id is a valid GUID
-                if (Guid.TryParse(survey_id, out Guid parsedSurveyId))
+                return Ok(new
                 {
-                    return Ok(new { Message = "Survey added successfully", survey_id = parsedSurveyId });
-                }
-                else
-                {
-                    return BadRequest(new { Message = "Failed to create survey. Invalid Survey ID." });
-                }
+                    message = $"Survey cloned {survey_ids.Count} times successfully",
+                    clonedSurveyIds = survey_ids
+                });
             }
             catch (Exception ex)
             {

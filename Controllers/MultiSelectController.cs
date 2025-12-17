@@ -41,7 +41,7 @@ namespace ABC.Controllers
                 Name = dto.Name.Trim(),
                 DisplayName = dto.DisplayName.Trim(),
                 IsActive = dto.IsActive,
-                Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description!.Trim(),
+                Description = dto.Description == null ? dto.Name.Trim() : dto.Description.Trim(),
                 SelectionType = dto.SelectionType.Trim(),
             };
             var created = await _repo.AddAsync(entity);
@@ -60,7 +60,7 @@ namespace ABC.Controllers
             existing.Name = dto.Name.Trim();
             existing.DisplayName = dto.DisplayName.Trim();
             existing.IsActive = dto.IsActive;
-            existing.Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description!.Trim();
+            existing.Description = dto.Description == null ? dto.Name.Trim() : dto.Description.Trim();
             existing.SelectionType = dto.SelectionType.Trim();
 
 
