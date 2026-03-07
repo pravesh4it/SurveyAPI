@@ -112,6 +112,32 @@ namespace ABC.Controllers
                 );
             }
         }
+        [HttpPost("update-partner")]
+        public async Task<IActionResult> SurveyUpdatePartner([FromBody] SurveyUpdatePartnerDto surveyAddPartnerDto)
+        {
+            if (surveyAddPartnerDto == null)
+                return BadRequest("Invalid survey partner data.");
+
+            try
+            {
+                var result = await surveyRepository
+                    .SurveyUpdatePartnerAsync(surveyAddPartnerDto);
+
+                return Ok(new
+                {
+                    Message = "Survey partner updated successfully",
+                    //partnerSurveyId = result.PartnerSurveyId,
+                    //autoNumber = result.AutoNumber
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(
+                    StatusCodes.Status500InternalServerError,
+                    new { Message = "Error saving data", Details = ex.Message }
+                );
+            }
+        }
 
         [HttpPost("add-surveyresponse")]
         public async Task<IActionResult> SurveyAddResponse([FromBody] SurveyResponseDto surveyResponseDto)
@@ -123,14 +149,15 @@ namespace ABC.Controllers
 
             try
             {
+                surveyResponseDto.Qualifying = false;
                 SurveyResponseResultDto surveyResponseResultDto = await surveyRepository.SurveyAddResponseAsync(surveyResponseDto);
-                if (surveyResponseResultDto.Status == "created")
+                if (surveyResponseResultDto.Status == "1")
                 {
                     return Ok(surveyResponseResultDto); // success
                 }
                 else
                 {
-                    return BadRequest(new { message = surveyResponseResultDto.Status, details = surveyResponseResultDto.Status });
+                    return BadRequest(new { message = surveyResponseResultDto.Status, details = surveyResponseResultDto.Message });
                 }
             }
             catch (Exception ex)
@@ -207,10 +234,10 @@ namespace ABC.Controllers
                 // You can now access result like this:
                 if (responseobject.Status == "Error")
                 {
-                    return BadRequest(responseobject.Message);
+                    return BadRequest(responseobject);
                 }
 
-                return Ok(responseobject.Message);
+                return Ok(responseobject);
             }
             catch (Exception ex)
             {
@@ -321,20 +348,25 @@ namespace ABC.Controllers
             if (survey == null || survey.Responses == null || !survey.Responses.Any())
                 return BadRequest("Invalid survey data");
 
-            bool hasDisqualifyingAnswer = await surveyRepository.HasDisqualifyingAnswerAsync(survey.Responses);
+            QualifyingDto qualifying = await surveyRepository.HasDisqualifyingAnswerAsync(survey.Responses);
 
-            if (hasDisqualifyingAnswer)
+            SurveyResponseDto surveyResponseDto = new SurveyResponseDto();
+            surveyResponseDto.AutoNumber = Convert.ToInt32(survey.SurveyPartnerId);
+            surveyResponseDto.RespondentIP = survey.RespondentIP;
+            surveyResponseDto.RespondentId = survey.RespondentId;
+            surveyResponseDto.addedby = survey.AddedBy;
+            surveyResponseDto.Answers = qualifying.Answers;
+            surveyResponseDto.Qualifying = qualifying.Qualifying;
+            SurveyResponseResultDto surveyResponseResultDto = await surveyRepository.SurveyAddResponseAsync(surveyResponseDto);
+            if (surveyResponseResultDto.Status == "1")
             {
-                return BadRequest(new
-                {
-                    message = "User selected a disqualifying option ([x]) and is not allowed to continue."
-                });
+                return Ok(surveyResponseResultDto); // success
+            }
+            else
+            {
+                return BadRequest(new { message = surveyResponseResultDto.Status, details = surveyResponseResultDto.Status });
             }
 
-            return Ok(new
-            {
-                message = "Survey passed. User can continue to the next step."
-            });
         }
 
         [HttpPost("change-response-status")]
@@ -431,5 +463,44 @@ namespace ABC.Controllers
             var data = await surveyRepository.GetSurveyFilesAsync(id);
             return Ok(data);
         }
+        [HttpDelete("survey-partner/{id}")]
+        public async Task<IActionResult> PartnerDelete(Guid id)
+        {
+            try
+            {
+                var deleted = await surveyRepository.DeleteSurveyPartnerAsync(id);
+                if (!deleted)
+                    return NotFound("Partner not found");
+
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
+        }
+        [HttpDelete("delete-prescreening-question/{id}")]
+        public async Task<IActionResult> QuestionDelete(Guid id)
+        {
+            try
+            {
+                var deleted = await surveyRepository.DeleteQuestionAsync(id);
+                if (!deleted)
+                    return NotFound("Question not found");
+
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
+        }
+        [HttpPut("update-prescreener")]
+        public async Task<IActionResult> UpdatePreScreener([FromBody] PreScreenerUpdateDto dto)
+        {
+            var result = await surveyRepository.SurveyUpdatePreScreenerAsync(dto);
+            return Ok(result);
+        }
+
     }
 }

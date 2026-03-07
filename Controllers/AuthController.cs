@@ -5,6 +5,10 @@ using ABC.Repositories;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 
 namespace ABC.Controllers
 {
@@ -48,6 +52,8 @@ namespace ABC.Controllers
                         var userresponse = await usersRepository.AddUserAsync(registerRequestDto, identityUser.Id);
                         // SEND EMAIL TO ACTIVATE USER ON EMAIL ADDRESS
                         var mailqueue = await usersRepository.AddEmailRegisterAsync(registerRequestDto.Username, identityUser.Id);
+                        // AccountEmail is target address
+                        await _emailService.SendEmailAsync(mailqueue.ToMail, mailqueue.Subject, mailqueue.content);
                         return Ok("user was registered");
                     }
                 }
@@ -99,7 +105,7 @@ namespace ABC.Controllers
             }
             return BadRequest("something went wrong");
         }
-
+        
         [HttpDelete("DeleteUser/{userId}")]
         public async Task<IActionResult> DeleteUser(string userId)
         {
@@ -192,7 +198,7 @@ namespace ABC.Controllers
             try
             {
                 // Find the user in UserProfiles table using the reset code
-                var userInfo = await dbContext.UserProfiles.FirstOrDefaultAsync(u => u.PasswordResetCode == code);
+                var userInfo = await dbContext.UserProfiles.FirstOrDefaultAsync(u => u.PasswordResetCode.ToLower() == code.ToLower());
 
                 if (userInfo != null)
                 {
@@ -323,5 +329,140 @@ namespace ABC.Controllers
             }
             return Ok(true);
         }
+        [HttpPut]
+        [Route("update-user")]
+        public async Task<IActionResult> UpdateUser([FromBody] UpdateUserRequestDto dto)
+        {
+            // 1️⃣ Find Identity User
+            var identityUser = await userManager.FindByIdAsync(dto.UserId);
+            if (identityUser == null)
+            {
+                return NotFound("User not found");
+            }
+
+            // 2️⃣ Update Roles
+            if (!string.IsNullOrEmpty(dto.Role))
+            {
+                // Get current roles
+                var existingRoles = await userManager.GetRolesAsync(identityUser);
+
+                // Remove all existing roles
+                if (existingRoles.Any())
+                {
+                    var removeRoleResult = await userManager.RemoveFromRolesAsync(identityUser, existingRoles);
+                    if (!removeRoleResult.Succeeded)
+                    {
+                        return BadRequest(removeRoleResult.Errors);
+                    }
+                }
+
+                // Add new roles
+                string[] newRoles = dto.Role
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(r => r.Trim())
+                    .ToArray();
+
+                var addRoleResult = await userManager.AddToRolesAsync(identityUser, newRoles);
+                if (!addRoleResult.Succeeded)
+                {
+                    return BadRequest(addRoleResult.Errors);
+                }
+            }
+
+            // 3️⃣ Update Custom User Fields (DB Table)
+            var updateResult = await usersRepository.UpdateUserAsync(new UserUpdateModel
+            {
+                UserId = identityUser.Id,
+                FirstName = dto.FirstName,
+                LastName = dto.LastName,
+                DesignationId = dto.DesignationId,
+                ContactNo = dto.ContactNo
+            });
+
+            if (!updateResult)
+            {
+                return BadRequest("Failed to update user details");
+            }
+
+            return Ok("User updated successfully");
+        }
+        [HttpGet("get-email-by-code-admin/{code}")]
+        public async Task<IActionResult> GetUserEmailAdmin(string code)
+        {
+            try
+            {
+                // Find the user in UserProfiles table using the reset code
+                var userInfo = await dbContext.UserInfoes.FirstOrDefaultAsync(u => u.PasswordResetCode.ToLower() == code.ToLower());
+
+                if (userInfo != null)
+                {
+                    // Get the corresponding ASP.NET Identity user
+                    var aspnetuser = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userInfo.AspNetUsersId);
+
+                    if (aspnetuser != null)
+                    {
+                        // Return the email
+                        return Ok(new { email = aspnetuser.Email });
+                    }
+
+                    return NotFound("User not found in ASP.NET Identity.");
+                }
+
+                return NotFound("Invalid or expired reset code.");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
+        }
+        [HttpPost("reset-password-admin")]
+        public async Task<IActionResult> ResetPasswordAdmin([FromBody] ResetPasswordRequestDto request)
+        {
+            if (string.IsNullOrEmpty(request.Code) || string.IsNullOrEmpty(request.Password))
+            {
+                return BadRequest("Reset code and password are required.");
+            }
+
+            try
+            {
+                // Find user profile by reset code
+                var userProfile = await dbContext.UserInfoes
+                    .FirstOrDefaultAsync(u => u.PasswordResetCode.ToLower() == request.Code.ToLower());
+
+                if (userProfile == null)
+                {
+                    return NotFound("Invalid or expired reset code.");
+                }
+
+                // Get user from Identity table
+                var user = await userManager.FindByIdAsync(userProfile.AspNetUsersId.ToString());
+                if (user == null)
+                {
+                    return NotFound("User not found.");
+                }
+
+                // Remove old password (optional: if not using password reset token)
+                var token = await userManager.GeneratePasswordResetTokenAsync(user);
+
+                var result = await userManager.ResetPasswordAsync(user, token, request.Password);
+
+                if (!result.Succeeded)
+                {
+                    var errors = result.Errors.Select(e => e.Description);
+                    return BadRequest(new { message = "Password reset failed.", errors });
+                }
+
+                // Clear the reset code after successful reset
+                userProfile.PasswordResetCode = null;
+                await dbContext.SaveChangesAsync();
+
+                return Ok(new { message = "Password reset successful." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
+        }
+
     }
 }

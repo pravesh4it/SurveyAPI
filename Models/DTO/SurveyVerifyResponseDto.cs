@@ -8,6 +8,7 @@ namespace ABC.Models.DTO
         public string? surveyId { get; set; } // Foreign key to Survey table
         public string? RespondentIP { get; set; }
         public string? PassCode { get; set; }
+        public string? AutoNumber { get; set; }
 
     }
 }

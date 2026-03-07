@@ -91,25 +91,62 @@ builder.Services.AddScoped<ICountryLanguageRepository, CountryLanguageRepository
 builder.Services.AddScoped<ICountryRepository, CountryRepository>();
 builder.Services.AddScoped<IRateRepository, RateRepository>();
 builder.Services.AddScoped<IInvoiceRepository, InvoiceRepository>();
+builder.Services.AddSingleton<IGeoIpService, GeoIpService>();
 
 
 builder.Services.AddAutoMapper(typeof(AutomapperProfiles));
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options => options.TokenValidationParameters = new TokenValidationParameters
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
     {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateIssuerSigningKey = true,
-        ValidateLifetime = true,
-        ValidIssuer = builder.Configuration["Jwt:Issuer"],
-        ValidAudience = builder.Configuration["Jwt:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateIssuerSigningKey = true,
+            ValidateLifetime = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+        };
 
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = context =>
+            {
+                context.HandleResponse();
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.ContentType = "application/json";
+                return context.Response.WriteAsync("{\"message\":\"Unauthorized\"}");
+            },
+
+            OnForbidden = context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                context.Response.ContentType = "application/json";
+                return context.Response.WriteAsync("{\"message\":\"Access denied\"}");
+            }
+        };
+        //options.Events = new JwtBearerEvents
+        //{
+        //    OnChallenge = context =>
+        //    {
+        //        context.HandleResponse();
+        //        context.Response.StatusCode = 401;
+        //        return Task.CompletedTask;
+        //    },
+        //    OnForbidden = context =>
+        //    {
+        //        context.Response.StatusCode = 403;
+        //        return Task.CompletedTask;
+        //    }
+        //};
     });
 
 builder.Services.Configure<ClientSetting>(builder.Configuration.GetSection("ClientSetting"));
+builder.Services.Configure<URLSettings>(builder.Configuration.GetSection("URLSettings"));
 var app = builder.Build();
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -119,13 +156,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
-// serve static files (optional, useful if you put Rotativa under wwwroot)
 app.UseStaticFiles();
-
+app.UseCors("AllowReactApp");  // MUST BE BEFORE AUTH
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseCors("AllowReactApp"); // Enable CORS for the defined policy
 app.MapControllers();
-
 app.Run();

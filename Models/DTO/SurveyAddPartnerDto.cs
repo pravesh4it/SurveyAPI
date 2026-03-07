@@ -28,5 +28,6 @@ namespace ABC.Models.DTO
 
         [Required]
         public Guid SurveyUuid { get; set; } // Unique identifier for the survey
+        public bool PreScreenerAllowed { get; set; }
     }
 }

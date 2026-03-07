@@ -1,6 +1,7 @@
 ﻿using ABC.Models.Domain;
 using ABC.Models.DTO;
 using ABC.Repositories;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -95,6 +96,7 @@ namespace ABC.Controllers
         /// DELETE /api/Country/{id}
         /// </summary>
         [HttpDelete("{id:guid}")]
+        [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> Delete(Guid id)
         {
             var ok = await _repo.DeleteAsync(id);

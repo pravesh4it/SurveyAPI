@@ -4,6 +4,7 @@ using ABC.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ABC.Migrations
 {
     [DbContext(typeof(AbcDbContext))]
-    partial class AbcDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260203070848_addcolumn-surresp2")]
+    partial class addcolumnsurresp2
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -921,13 +924,10 @@ namespace ABC.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("RespondentIdInternal")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<DateTime>("ResponseDate")
                         .HasColumnType("datetime2");
 
-                    b.Property<DateTime?>("StartedAt")
+                    b.Property<DateTime>("StartedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Status")

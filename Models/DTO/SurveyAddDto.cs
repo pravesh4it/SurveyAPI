@@ -24,6 +24,7 @@
         public bool PreScreener { get; set; }
         public bool UniqueLink {  get; set; }
         public string? DefaultPartner { get; set; }
+        public string? SubmitType { get; set; }
 
     }
 }

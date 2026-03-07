@@ -38,6 +38,8 @@
         public string LOI { get; set; }
         public string IR { get; set; }
         public string LastCompleted { get; set; } // Nullable to allow for no completion date
+        public int Clicks { get; set; }
+        public string? Statics { get; set; }
 
 
     }

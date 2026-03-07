@@ -21,8 +21,10 @@ namespace ABC.Models.Domain
         public string? PartnerId { get; set; }
         [Required]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow; // Record creation timestamp
+        public DateTime? StartedAt { get; set; } = DateTime.UtcNow; // Record creation timestamp
+        
         public DateTime? UpdatedAt { get; set; } // Record last update timestamp
-        public string AddedBy { get; set; } // Identifier for the user who added it
+        public string? AddedBy { get; set; } // Identifier for the user who added it
         // Navigation property to Survey (optional)
         [ForeignKey(nameof(SurveyId))]
         public virtual Survey Survey { get; set; }
@@ -38,6 +40,12 @@ namespace ABC.Models.Domain
 
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public int Gid { get; set; }   // ✅ Auto-increment
+        public string? DeviceType { get; set; } // e.g., Mobile, Desktop
+        public string? UserAgent { get; set; } // Browser or app user agent string
+        public string? InternalStatus { get; set; }
+        public string? StatusNotes { get; set; }
+        public string? RespondentIdInternal { get; set; }
+
 
     }
 

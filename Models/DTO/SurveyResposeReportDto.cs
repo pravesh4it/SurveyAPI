@@ -13,5 +13,8 @@
             public DateTime? CompletedDate { get; set; }
 
             public string LOI { get; set; }
+            public string? InternalId { get; set; }
+            public string? Answers { get; set; }
+
     }
 }

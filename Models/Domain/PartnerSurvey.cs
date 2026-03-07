@@ -19,6 +19,7 @@ namespace ABC.Models.Domain
         public DateTime AddedOn { get; set; } // Timestamp for when added
         public string AddedBy { get; set; } // Identifier for the user who added it
         public Guid SurveyUuid { get; set; } // Unique identifier for the survey
+        public bool PreScreener { get; set; }
 
         // Constructor
         public PartnerSurvey()

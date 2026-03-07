@@ -67,11 +67,28 @@ namespace ABC.Repositories
             return userInfo;
         }
 
-        public async Task<UserInfo> UpdateUserAsync(UserInfo user)
+        public async Task<int> UpdateUserAsync(string id, UpdateUserDto user)
         {
-            dbContext.UserInfoes.Update(user);
-            await dbContext.SaveChangesAsync();
-            return user;
+            // find user and upadate
+            UserInfo user1 = await dbContext.UserInfoes
+                                 .Include(u => u.Department)
+                                 .FirstOrDefaultAsync(u => u.AspNetUsersId == id);
+
+            if (user1 != null)
+            {
+                user1.FirstName = user.FirstName;
+                user1.LastName = user.LastName;
+                user1.ContactNo = user.ContactNo;
+                user1.DesignationId = user.DesignationId;
+                dbContext.UserInfoes.Update(user1);
+                await dbContext.SaveChangesAsync();
+                return 1;
+            }
+            else
+            {
+                return 0;
+
+            }
         }
 
         public async Task<bool> DeleteUserAsync(string userId)
@@ -122,7 +139,7 @@ namespace ABC.Repositories
             return userOptionsDto;
         }
 
-        public async Task<string> AddEmailRegisterAsync(string Email, string AspNetUserId)
+        public async Task<MailQueue> AddEmailRegisterAsync(string Email, string AspNetUserId)
         {
             MailQueue mailQueue = new MailQueue();
             try
@@ -143,7 +160,7 @@ namespace ABC.Repositories
             {
 
             }
-            return "success";
+            return mailQueue;
         }
 
         public async Task<MailQueue> AddEmailRegisterUserAsync(string Email, string AspNetUserId)
@@ -272,10 +289,38 @@ namespace ABC.Repositories
                 DepartmentName = u.Department != null ? u.Department.Name : null,
                 ContactNo = u.ContactNo,
                 Roles = roles,
-                Email= dbContext.Users.FirstOrDefault(s=>s.Id.ToString()==u.AspNetUsersId.ToString()).UserName
+                Email = dbContext.Users.FirstOrDefault(s => s.Id.ToString() == u.AspNetUsersId.ToString()).UserName
             };
         }
+        public async Task<bool> UpdateUserAsync(UserUpdateModel model)
+        {
+            try
+            {
+                var user = await dbContext.UserInfoes
+                    .FirstOrDefaultAsync(x => x.AspNetUsersId == model.UserId);
 
-        
+                if (user == null)
+                    return false;
+
+                // 🔑 FIX: string → Guid
+                if (!Guid.TryParse(model.DesignationId, out Guid designationGuid))
+                    throw new Exception("Invalid DesignationId");
+
+                user.DesignationId = designationGuid;
+                user.FirstName = model.FirstName;
+                user.LastName = model.LastName;
+                user.DesignationId = designationGuid;
+                user.ContactNo = string.IsNullOrEmpty( model.ContactNo) ? "" : model.ContactNo;
+                user.LastModifiedDate = DateTime.UtcNow;
+
+                await dbContext.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
+            return true;
+        }
     }
 }

@@ -41,13 +41,13 @@ namespace ABC.Controllers
 
         // PUT: api/users/{id}
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateUser(string id, UserInfo user)
+        public async Task<IActionResult> UpdateUser(string id, UpdateUserDto user)
         {
-            if (id != user.AspNetUsersId) return BadRequest();
-
-            await _usersRepository.UpdateUserAsync(user);
+            await _usersRepository.UpdateUserAsync(id, user);
             return NoContent();
         }
+        
+
 
         // GET: api/users
         [HttpGet("options")]

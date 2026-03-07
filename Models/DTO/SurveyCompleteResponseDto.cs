@@ -9,6 +9,6 @@ namespace ABC.Models.DTO
         public string? sid { get; set; } // Foreign key to Survey table
         [Required]
         public string response_type { get; set; } // Unique identifier for the respondent
-        public string addedby { get; set; }
+        public string? addedby { get; set; }
     }
 }

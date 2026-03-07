@@ -6,5 +6,6 @@
         public string ResponseUuid { get; set; }
         public string ResponseLink { get; set; }
         public string Passcode { get; set; }
+        public string Message {  get; set; }
     }
 }

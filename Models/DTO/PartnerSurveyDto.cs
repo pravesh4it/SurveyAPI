@@ -19,5 +19,11 @@
         public string Link { get; set; }
         public string IR { get; set; }
         public string Drops { get; set; }
+        public bool PreScreener { get; set; }
+        public string LOI { get; set; }
+
+        public string LastCompleted { get; set; }
+
+        public string Statics { get; set; }
     }
 }

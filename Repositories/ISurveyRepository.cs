@@ -25,7 +25,7 @@ namespace ABC.Repositories
         Task<object> GetIsSurveyPreScreeningAsync(string surveyId);
         Task<PreScreenerSurveyDto> GetSurveyPreScreeningQuestAsync(string Id);
         Task<object> SurveyAddPreScreenerAsync(PreScreenerAddDto preScreenerAddDto);
-        Task<bool> HasDisqualifyingAnswerAsync(List<ResponseDto> responses);
+        Task<QualifyingDto> HasDisqualifyingAnswerAsync(List<ResponseDto> responses);
         Task<bool> SurveyResponseUpdateStatusAsync(UpdateSurveyStatusDto surveystatusDto);
         Task<string> AddRecontact(RecontactDto recontactDto);
         Task<SurveyEditDto> GetSurveyByPartnerIdAsync(Guid survey_partner_id);
@@ -33,6 +33,10 @@ namespace ABC.Repositories
         Task<object> SurveyResponseVerifyAsync(SurveyVerifyResponseDto surveyResponseDto);
         Task<SurveyFile> GetSurveyFileAsync(SurveyFileDto surveyFileDto, string default_partner);
         Task<List<SurveyFile>> GetSurveyFilesAsync(string SurveyId);
+        Task<bool> SurveyUpdatePartnerAsync(SurveyUpdatePartnerDto dto);
+        Task<bool> DeleteSurveyPartnerAsync(Guid PartnerRowId);
+        Task<bool> DeleteQuestionAsync(Guid QuestionId);
+        Task<object> SurveyUpdatePreScreenerAsync(PreScreenerUpdateDto dto);
 
     }
 }

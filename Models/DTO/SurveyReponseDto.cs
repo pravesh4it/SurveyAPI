@@ -11,7 +11,10 @@ namespace ABC.Models.DTO
         [Required]
         public string RespondentId { get; set; } // Unique identifier for the respondent
         public string? RespondentIP { get; set; }
-        public string addedby { get; set; }
+        public string? addedby { get; set; }
         public int AutoNumber { get; set; }
+        public string? Answers { get; set; }
+        public string? SurveyName { get; set; }
+        public bool Qualifying { get; set; } = true;
     }
 }
