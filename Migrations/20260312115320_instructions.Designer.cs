@@ -4,6 +4,7 @@ using ABC.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ABC.Migrations
 {
     [DbContext(typeof(AbcDbContext))]
-    partial class AbcDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260312115320_instructions")]
+    partial class instructions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -526,9 +529,6 @@ namespace ABC.Migrations
                         .HasColumnType("bit");
 
                     b.Property<string>("InstructionText")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("PONumber")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("PartnerDisqualificationLink")
@@ -1218,85 +1218,6 @@ namespace ABC.Migrations
                     b.ToTable("UserProfiles");
                 });
 
-            modelBuilder.Entity("ABC.Models.Domain.VendorAllocationEmailAttachment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<byte[]>("Content")
-                        .IsRequired()
-                        .HasColumnType("varbinary(max)");
-
-                    b.Property<string>("ContentType")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("IsSystemGenerated")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid>("VendorAllocationEmailHistoryId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("VendorAllocationEmailHistoryId");
-
-                    b.ToTable("VendorAllocationEmailAttachments");
-                });
-
-            modelBuilder.Entity("ABC.Models.Domain.VendorAllocationEmailHistory", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Body")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("CreatedDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Emails")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("IsSent")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("PONumber")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime?>("SentDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Subject")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid>("SurveyId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("VendorId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("VendorName")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("vendorAllocationEmailHistories");
-                });
-
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
                 {
                     b.Property<string>("Id")
@@ -1675,17 +1596,6 @@ namespace ABC.Migrations
                     b.Navigation("Department");
 
                     b.Navigation("Designation");
-                });
-
-            modelBuilder.Entity("ABC.Models.Domain.VendorAllocationEmailAttachment", b =>
-                {
-                    b.HasOne("ABC.Models.Domain.VendorAllocationEmailHistory", "VendorAllocationEmailHistory")
-                        .WithMany()
-                        .HasForeignKey("VendorAllocationEmailHistoryId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("VendorAllocationEmailHistory");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

@@ -15,6 +15,9 @@
         public string SecurityFailLink { get; set; }
         public string PausedLink { get; set; }
         public bool PreScreenerAllowed { get; set; }
+        // NEW FIELDS
+        public bool ShowInstruction { get; set; }
+        public string InstructionText { get; set; }
     }
 
 }

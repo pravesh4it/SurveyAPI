@@ -275,6 +275,9 @@ namespace ABC.Data
         public DbSet<RateHistory> RateHistory { get; set; }
         public DbSet<InvoiceMaster> InvoiceMasters { get; set; } = null!;
         public DbSet<InvoiceTransaction> InvoiceTransactions { get; set; } = null!;
+        public DbSet<VendorAllocationEmailHistory> vendorAllocationEmailHistories { get; set; }
+        public DbSet<VendorAllocationEmailAttachment> VendorAllocationEmailAttachments {  get; set; }
+        
     }
 
 

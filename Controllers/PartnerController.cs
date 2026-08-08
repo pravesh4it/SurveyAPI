@@ -23,7 +23,6 @@ namespace ABC.Controllers
             this.clientSetting = clientSettingOptions.Value;
         }
         [HttpGet]
-        [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> GetAll()
         {
             try
@@ -41,7 +40,6 @@ namespace ABC.Controllers
 
         // POST: api/Client
         [HttpPost]
-        [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> Create([FromBody] ClientDto clientDto)
         {
             try
@@ -70,7 +68,6 @@ namespace ABC.Controllers
 
         // PUT: api/Client/{id}
         [HttpPut("{id}")]
-        [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> Update(Guid id, [FromBody] ClientDto clientDto)
         {
             try
@@ -100,7 +97,6 @@ namespace ABC.Controllers
 
         // GET: api/Client/{id}
         [HttpGet("{id}")]
-        [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> GetClient(Guid id)
         {
             try

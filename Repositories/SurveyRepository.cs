@@ -1,8 +1,11 @@
 ﻿
 using ABC.Data;
+using ABC.Extensions;
 using ABC.Migrations;
 using ABC.Models.Domain;
 using ABC.Models.DTO;
+using Azure.Core;
+using ClosedXML.Excel;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Data.SqlClient;
@@ -10,11 +13,14 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
+using MimeKit;
+using Org.BouncyCastle.Asn1.Ocsp;
 using System.Data;
 using System.Linq;
-using System.Text.RegularExpressions;
-using ABC.Extensions;
+using System.Numerics;
 using System.Text;
+using System.Text.RegularExpressions;
+using System.Web.WebPages;
 
 namespace ABC.Repositories
 {
@@ -27,7 +33,9 @@ namespace ABC.Repositories
         private readonly IGeoIpService _geoIpService;
         private readonly IHttpContextAccessor _httpContextAccessor = new HttpContextAccessor();
         private readonly URLSettings uRLSettings;
-        public SurveyRepository(AbcDbContext dbContext, DataManager dataManager, IOptions<ClientSetting> clientSettingOptions, IWebHostEnvironment environment, IGeoIpService geoIpService, IOptions<URLSettings> urlSettingOptions)
+        private readonly Settings settings;
+        private readonly IEmailService emailService;
+        public SurveyRepository(AbcDbContext dbContext, DataManager dataManager, IOptions<ClientSetting> clientSettingOptions, IWebHostEnvironment environment, IGeoIpService geoIpService, IOptions<URLSettings> urlSettingOptions, IEmailService emailService, IOptions<Settings> options)
         {
             this.dbContext = dbContext;
             this._dataManager = dataManager;
@@ -35,6 +43,8 @@ namespace ABC.Repositories
             _environment = environment;
             _geoIpService = geoIpService;
             this.uRLSettings = urlSettingOptions.Value;
+            this.emailService = emailService;
+            this.settings = options.Value;
         }
         public async Task<object> GetDataOptionsAsync()
         {
@@ -108,6 +118,12 @@ namespace ABC.Repositories
                 .Select(c => new { id = c.Id, name = c.Name })
             .ToListAsync();
 
+            //------------------------------------------------------------------------
+            var surveysreport = await dbContext.Surveys
+                .Where(c => !c.ParentId.HasValue)
+                .Select(c => new { id = c.Id, name = c.Name })
+            .ToListAsync();
+
             return new
             {
                 sales_managers = salesManagers,
@@ -118,7 +134,8 @@ namespace ABC.Repositories
                 status = status,
                 currencies = currency,
                 quiztype = quiztype,
-                surveys = surveys
+                surveys = surveys,
+                surveysreport = surveysreport
             };
 
         }
@@ -151,6 +168,7 @@ namespace ABC.Repositories
             try
             {
                 var objDictionary = new Dictionary<string, string>();
+
                 DataTable dt = await _dataManager.GetDataTableAsync("[usp_survey_all]", objDictionary);
                 if (dt.Rows.Count > 0)
                 {
@@ -163,6 +181,48 @@ namespace ABC.Repositories
             }
             return surveys;
 
+        }
+        public async Task<SurveySearchResponse> GetSurveyListAsync(SurveySearchRequest request)
+        {
+            var response = new SurveySearchResponse();
+
+            try
+            {
+                var objDictionary = new Dictionary<string, string>
+        {
+            { "@PageNumber", request.PageNumber.ToString() },
+            { "@PageSize", request.PageSize.ToString() },
+            { "@SurveyName", request.SurveyName ?? string.Empty },
+            { "@Title", request.Title ?? string.Empty },
+            { "@ClientId", request.ClientId?.ToString() ?? string.Empty },
+            { "@CountryId", request.CountryId?.ToString() ?? string.Empty },
+            { "@StatusId", request.StatusId?.ToString() ?? string.Empty },
+            { "@ProjectManagerId", request.ProjectManagerId ?? string.Empty },
+            { "@SalesManagerId", request.SalesManagerId ?? string.Empty },
+            {"@MySurveysOnly", request.MySurveysOnly.ToString()},
+            {"@UserId", request.UserId?.ToString() ?? "" }
+        };
+
+                DataTable dt = await _dataManager.GetDataTableAsync("[usp_survey_search]", objDictionary);
+
+                if (dt.Rows.Count > 0)
+                {
+                    response.Data = dt.ToList<SurveyDto>();
+                    response.TotalRecords = Convert.ToInt32(dt.Rows[0]["TotalRecords"]);
+                }
+                else
+                {
+                    response.Data = new List<SurveyDto>();
+                    response.TotalRecords = 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log exception
+                throw;
+            }
+
+            return response;
         }
         public async Task<List<PartnerSurveyDto>> GetSurveyPartnersListAsync(Guid Id)
         {
@@ -261,53 +321,17 @@ namespace ABC.Repositories
                         .Select(s => (int?)s.AutoNumber)
                         .MaxAsync();
 
-                    var nextAuto = (maxAuto == 0 ? 999 : maxAuto) + 1;
+                    var nextAuto = (maxAuto == null ? 999 : maxAuto) + 1;
                     survey.AutoNumber = (int)nextAuto;
-                    survey.Name = $"PDR{survey.AutoNumber}";
+                    survey.Name = $"{settings.KeyName}{survey.AutoNumber}";
 
                     // 1) Add survey
                     dbContext.Surveys.Add(survey);
                     await dbContext.SaveChangesAsync();
                     var survey_id = survey.Id.ToString();
 
-                    // 2) Add PartnerSurvey (default partner)
-                    var partnerIdGuid = Guid.Parse(surveyDto.DefaultPartner);
-                    // AutoNumber generation
-                    var maxAutoPartner = await dbContext.partnerSurveys
-                        .Select(s => (int?)s.AutoNumber)
-                        .MaxAsync() ?? 999;
-
-
-                    var partnerSurvey = new PartnerSurvey
-                    {
-                        Id = Guid.NewGuid(),
-                        PartnerId = partnerIdGuid,
-                        Rate = surveyDto.ClientRate,
-                        AddedBy = surveyDto.CreatedById,
-                        AddedOn = DateTime.UtcNow,
-                        Quota = surveyDto.SurveyQuota,
-                        SurveyUuid = survey.Id,
-                        AutoNumber = maxAutoPartner + 1
-                    };
-                    dbContext.partnerSurveys.Add(partnerSurvey);
-                    await dbContext.SaveChangesAsync();
-
                     // Determine the start date for the initial rates (use LaunchedDate if you want business date)
                     DateTime startDate = DateTime.UtcNow;
-
-                    // 3) Close overlapping partner rates (if any)
-                    var overlappingPartnerRates = await dbContext.RateHistory
-                        .Where(r => r.EntityType == "Partner" && r.EntityId == partnerSurvey.Id
-                                    && r.StartDate < startDate
-                                    && (r.EndDate == null || r.EndDate >= startDate))
-                        .ToListAsync();
-
-                    foreach (var prev in overlappingPartnerRates)
-                    {
-                        prev.EndDate = DateTime.UtcNow;
-                        dbContext.RateHistory.Update(prev);
-                    }
-
                     // 4) Insert RateHistory for Survey
                     var surveyRate = new RateHistory
                     {
@@ -323,27 +347,65 @@ namespace ABC.Repositories
                         CreatedAt = DateTime.UtcNow
                     };
                     await dbContext.RateHistory.AddAsync(surveyRate);
-
-                    // 5) Insert RateHistory for Partner
-                    var partnerRate = new RateHistory
-                    {
-                        Id = Guid.NewGuid(),
-                        EntityType = "Partner",
-                        EntityId = partnerSurvey.Id,
-                        Rate = surveyDto.ClientRate,
-                        Currency = surveyDto.Currency?.ToString(),
-                        StartDate = startDate,
-                        EndDate = null,
-                        Note = $"Initial partner rate for survey {survey.Id}",
-                        CreatedBy = Guid.Parse(surveyDto.CreatedById),
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    await dbContext.RateHistory.AddAsync(partnerRate);
-
-                    // save changes and commit
                     await dbContext.SaveChangesAsync();
-                    await tx.CommitAsync();
 
+                    bool IsdefaultVendor = settings.IsDefaultVendor;
+
+                    if (IsdefaultVendor == true)
+                    {
+                        // 2) Add PartnerSurvey (default partner)
+                        var partnerIdGuid = Guid.Parse(surveyDto.DefaultPartner);
+                        // AutoNumber generation
+                        var maxAutoPartner = await dbContext.partnerSurveys
+                          .Select(s => (int?)s.AutoNumber)
+                          .MaxAsync() ?? 999;
+
+                        var partnerSurvey = new PartnerSurvey
+                        {
+                            Id = Guid.NewGuid(),
+                            PartnerId = partnerIdGuid,
+                            Rate = surveyDto.ClientRate,
+                            AddedBy = surveyDto.CreatedById,
+                            AddedOn = DateTime.UtcNow,
+                            Quota = surveyDto.SurveyQuota,
+                            SurveyUuid = survey.Id,
+                            AutoNumber = maxAutoPartner + 1
+                        };
+                        dbContext.partnerSurveys.Add(partnerSurvey);
+                        await dbContext.SaveChangesAsync();
+
+                        // 3) Close overlapping partner rates (if any)
+                        var overlappingPartnerRates = await dbContext.RateHistory
+                         .Where(r => r.EntityType == "Partner" && r.EntityId == partnerSurvey.Id
+                                  && r.StartDate < startDate
+                                && (r.EndDate == null || r.EndDate >= startDate))
+                        .ToListAsync();
+
+                        foreach (var prev in overlappingPartnerRates)
+                        {
+                            prev.EndDate = DateTime.UtcNow;
+                            dbContext.RateHistory.Update(prev);
+                        }
+
+                        /// 5) Insert RateHistory for Partner
+                        var partnerRate = new RateHistory
+                        {
+                            Id = Guid.NewGuid(),
+                            EntityType = "Partner",
+                            EntityId = partnerSurvey.Id,
+                            Rate = surveyDto.ClientRate,
+                            Currency = surveyDto.Currency?.ToString(),
+                            StartDate = startDate,
+                            EndDate = null,
+                            Note = $"Initial partner rate for survey {survey.Id}",
+                            CreatedBy = Guid.Parse(surveyDto.CreatedById),
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        await dbContext.RateHistory.AddAsync(partnerRate);
+                        // save changes and commit
+                        await dbContext.SaveChangesAsync();
+                    }
+                    await tx.CommitAsync();
                     survey_id_final = survey_id;
                 }
                 return survey_id_final;
@@ -354,8 +416,6 @@ namespace ABC.Repositories
                 return ex.Message;
             }
         }
-
-
         public async Task<bool> DeleteAsync(Guid surveyId)
         {
             try
@@ -503,7 +563,9 @@ namespace ABC.Repositories
                     PartnerDisqualificationLink = surveyAddPartnerDto.PartnerDisqualificationLink,
                     SecurityFailLink = surveyAddPartnerDto.SecurityFailLink,
                     PausedLink = surveyAddPartnerDto.PausedLink,
-                    PreScreener = surveyAddPartnerDto.PreScreenerAllowed
+                    PreScreener = surveyAddPartnerDto.PreScreenerAllowed,
+                    HasInstruction = surveyAddPartnerDto.ShowInstruction,
+                    InstructionText = surveyAddPartnerDto.InstructionText
                 };
 
                 // AutoNumber generation
@@ -566,6 +628,9 @@ namespace ABC.Repositories
                 partnerSurvey.SecurityFailLink = dto.SecurityFailLink;
                 partnerSurvey.PausedLink = dto.PausedLink;
                 partnerSurvey.PreScreener = dto.PreScreenerAllowed;
+                partnerSurvey.HasInstruction = dto.ShowInstruction;
+                partnerSurvey.InstructionText = dto.InstructionText;
+
                 //partnerSurvey.UpdatedBy = dto.UpdatedBy;
                 //partnerSurvey.up = DateTime.UtcNow;
 
@@ -582,184 +647,6 @@ namespace ABC.Repositories
             }
         }
 
-
-        public async Task<SurveyResponseResultDto> SurveyAddResponse1Async(SurveyResponseDto surveyResponseDto)
-        {
-            SurveyResponseResultDto surveyResponseResultDto = new SurveyResponseResultDto();
-            try
-            {
-                // Fetch SurveyId and PartnerId from PartnerSurveys table
-                var partnerSurvey = await dbContext.partnerSurveys
-                    .FirstOrDefaultAsync(ps => ps.AutoNumber == surveyResponseDto.AutoNumber);
-
-                if (partnerSurvey == null)
-                {
-                    throw new Exception($"No entry found in PartnerSurveys with Id {surveyResponseDto.SurveyPartnerId}");
-                }
-
-                Guid survey_id = partnerSurvey.SurveyUuid;
-
-                var Survey = await dbContext.Surveys
-                    .FirstOrDefaultAsync(s => s.Id == survey_id);
-
-                if (Survey.Status.ToUpper() != "478EE20F-8437-4C74-91E1-CB970336A282")
-                {
-                    surveyResponseResultDto.Status = "Survey is not live";
-                    surveyResponseResultDto.ResponseUuid = Guid.Empty.ToString();
-                    surveyResponseResultDto.ResponseLink = "";
-                    surveyResponseResultDto.Passcode = "";
-                    return surveyResponseResultDto;
-                }
-                var respondentId = surveyResponseDto.RespondentId.ToLower();
-
-                var existingResponse = await dbContext.surveyResponses
-                    .FirstOrDefaultAsync(sr =>
-                        sr.RespondentId.ToLower() == respondentId &&
-                        sr.Survey.Status.ToUpper() != "0A0C6416-3252-4382-8223-F1DEA3D066B8" && sr.Status != "incomplete"
-                    );
-
-                if (existingResponse != null)
-                {
-                    surveyResponseResultDto.Status = "already exists";
-                    surveyResponseResultDto.ResponseUuid = existingResponse.Id;
-                    surveyResponseResultDto.ResponseLink = existingResponse.ClientURL;
-                    surveyResponseResultDto.Passcode = existingResponse.passcode;
-                    return surveyResponseResultDto;
-                }
-                var country = await _geoIpService.GetCountryCodeAsync(surveyResponseDto.RespondentIP);
-                var respondentCountry = await _geoIpService.GetCountryCodeAsync(surveyResponseDto.RespondentIP);
-
-                if (Survey.UniqueLink == false)
-                {
-                    string country_code = (await dbContext.Countries
-                    .FirstOrDefaultAsync(co => co.Id.ToString() == Survey.Country)).ShortCode;
-
-                    if (string.IsNullOrEmpty(respondentCountry))
-                    {
-                        surveyResponseResultDto.Status = "Country not detected";
-                        surveyResponseResultDto.ResponseUuid = Guid.Empty.ToString();
-                        surveyResponseResultDto.ResponseLink = "";
-                        surveyResponseResultDto.Passcode = "";
-                        return surveyResponseResultDto;
-                    }
-                    if (country_code.ToLower() != respondentCountry.ToLower())
-                    {
-                        surveyResponseResultDto.Status = "Not  allowed for your location.";
-                        surveyResponseResultDto.ResponseUuid = Guid.Empty.ToString();
-                        surveyResponseResultDto.ResponseLink = "";
-                        surveyResponseResultDto.Passcode = "";
-                        return surveyResponseResultDto;
-                    }
-                    string survey_link = Survey.ClientLink;
-                    var existingResponse2 = await dbContext.surveyResponses
-                   .FirstOrDefaultAsync(sr =>
-                       sr.RespondentId.ToLower() == respondentId &&
-                       sr.SurveyId == survey_id && sr.Status == "incomplete"
-                   );
-                    if (existingResponse2 == null)
-                    {
-                        // Create the SurveyResponse object
-                        SurveyResponse surveyResponse = new SurveyResponse
-                        {
-                            Id = Guid.NewGuid().ToString(),
-                            AddedBy = surveyResponseDto.addedby,
-                            SurveyId = partnerSurvey.SurveyUuid,
-                            PartnerId = partnerSurvey.PartnerId.ToString(),
-                            RespondentId = surveyResponseDto.RespondentId,
-                            RespondentIP = surveyResponseDto.RespondentIP,
-                            Answers = "",
-                            CreatedAt = DateTime.UtcNow,
-                            Status = "incomplete",
-                            passcode = Guid.NewGuid().ToString(),
-                            userIdFor = surveyResponseDto.addedby,
-
-                        };
-                        // Replace placeholder in client link
-                        string updatedLink = Regex.Replace(survey_link, @"[\{\[\<][^}\]>]+[\}\]\>]", surveyResponseDto.RespondentId.ToString());
-
-                        surveyResponse.ClientURL = updatedLink;
-
-                        // Save to database
-                        await dbContext.AddAsync(surveyResponse);
-                        await dbContext.SaveChangesAsync();
-
-                        surveyResponseResultDto.Status = "created";
-                        surveyResponseResultDto.ResponseUuid = surveyResponse.RespondentId.ToString();
-                        surveyResponseResultDto.ResponseLink = updatedLink;
-                        surveyResponseResultDto.Passcode = surveyResponse.passcode;
-                    }
-                    else
-                    {
-                        // Update the existing response with new details
-                        existingResponse2.userIdFor = surveyResponseDto.addedby;
-                        existingResponse2.ResponseDate = DateTime.UtcNow;
-                        await dbContext.SaveChangesAsync();
-
-                        surveyResponseResultDto.Status = "created";
-                        surveyResponseResultDto.ResponseUuid = existingResponse2.RespondentId.ToString();
-                        surveyResponseResultDto.ResponseLink = existingResponse2.ClientURL;
-                        surveyResponseResultDto.Passcode = existingResponse2.passcode;
-                    }
-                }
-                else// Survey.UniqueLink == true
-                {
-                    var respondent_Country = await _geoIpService.GetCountryCodeAsync(surveyResponseDto.RespondentIP);
-
-                    string country_code = (await dbContext.Countries
-                    .FirstOrDefaultAsync(co => co.Id.ToString() == Survey.Country)).ShortCode;
-
-                    if (string.IsNullOrEmpty(respondentCountry))
-                    {
-                        surveyResponseResultDto.Status = "Country not detected";
-                        surveyResponseResultDto.ResponseUuid = Guid.Empty.ToString();
-                        surveyResponseResultDto.ResponseLink = "";
-                        surveyResponseResultDto.Passcode = "";
-                        return surveyResponseResultDto;
-                    }
-                    if (country_code.ToLower() != respondentCountry.ToLower())
-                    {
-                        surveyResponseResultDto.Status = "Country mismatch";
-                        surveyResponseResultDto.ResponseUuid = Guid.Empty.ToString();
-                        surveyResponseResultDto.ResponseLink = "";
-                        surveyResponseResultDto.Passcode = "";
-                        return surveyResponseResultDto;
-                    }
-
-                    var existingResponse2 = await dbContext.surveyResponses
-                   .FirstOrDefaultAsync(sr =>
-                       sr.RespondentId.ToLower() == respondentId &&
-                       sr.SurveyId == survey_id && sr.Status == "incomplete"
-                   );
-
-                    if (existingResponse2 != null)
-                    {
-                        // Update the existing response with new details
-                        existingResponse2.userIdFor = surveyResponseDto.addedby;
-                        existingResponse2.ResponseDate = DateTime.UtcNow;
-                        await dbContext.SaveChangesAsync();
-
-                        surveyResponseResultDto.Status = "created";
-                        surveyResponseResultDto.ResponseUuid = existingResponse2.RespondentId.ToString();
-                        surveyResponseResultDto.ResponseLink = existingResponse2.ClientURL;
-                        surveyResponseResultDto.Passcode = existingResponse2.passcode;
-
-                    }
-                    else
-                    {
-                        surveyResponseResultDto.Status = "Not Available";
-                        surveyResponseResultDto.ResponseUuid = "";
-                        surveyResponseResultDto.ResponseLink = "";
-                        surveyResponseResultDto.Passcode = "";
-                    }
-                }
-                return surveyResponseResultDto;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error in SurveyAddResponseAsync: {ex.Message}");
-                throw;
-            }
-        }
         public async Task<SurveyResponseResultDto> SurveyAddResponseAsync(SurveyResponseDto dto)
         {
             var result = new SurveyResponseResultDto();
@@ -785,6 +672,8 @@ namespace ABC.Repositories
                     return Fail(result, "Survey is not live");
                 }
 
+                bool IsUniqueLink = survey.UniqueLink;
+
                 // 3️⃣ Calculate last field day
                 DateOnly lastDate = survey.LaunchedDate.AddDays(survey.FilledTimeInDays);
                 DateOnly today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -792,7 +681,7 @@ namespace ABC.Repositories
                 if (today > lastDate)
                 {
                     result.Status = "0";
-                    result.Message = "Survey field time expired";
+                    result.Message = "The survey is currently unavailable. Kindly check back after some time.";
                     return result;
                 }
                 string respondentId = dto.RespondentId.ToLower();
@@ -815,7 +704,16 @@ namespace ABC.Repositories
                 }
                 if (dto.Qualifying == true)
                 {
-                    string id = await SaveRejectedResponse(dto, partnerSurvey, "Disqualify", "Prescreener not qualified");
+                    string id = await SaveRejectedResponse(dto, survey.UniqueLink, partnerSurvey, "Disqualify", "Prescreener not qualified");
+                    if (id == "0")
+                    {
+                        result.Status = "0";
+                        result.ResponseUuid = existingCompleted.Id;
+                        result.ResponseLink = existingCompleted.ClientURL;
+                        result.Passcode = existingCompleted.passcode;
+                        result.Message = "No Link Available";
+                        return result;
+                    }
                     result.Status = "1";
                     result.ResponseLink = InternalResponseLink + id;
                     return Fail(result, "Prescreener not qualified");
@@ -823,9 +721,19 @@ namespace ABC.Repositories
 
                 // 3️⃣ GEO-IP CHECK
                 var respondentCountry = await _geoIpService.GetCountryCodeAsync(dto.RespondentIP);
-                if (string.IsNullOrEmpty(respondentCountry))
+                bool speedersetting = settings.IsSpeederApplied;
+                if (string.IsNullOrEmpty(respondentCountry) && speedersetting == true)
                 {
-                    string id = await SaveRejectedResponse(dto, partnerSurvey, "Disqualify", "Location Not Identified");
+                    string id = await SaveRejectedResponse(dto, survey.UniqueLink, partnerSurvey, "Disqualify", "Location Not Identified");
+                    if (id == "0")
+                    {
+                        result.Status = "0";
+                        result.ResponseUuid = existingCompleted.Id;
+                        result.ResponseLink = existingCompleted.ClientURL;
+                        result.Passcode = existingCompleted.passcode;
+                        result.Message = "No Link Available";
+                        return result;
+                    }
                     result.Status = "1";
                     result.ResponseLink = InternalResponseLink + id;
                     return Fail(result, "Location Not Identified");
@@ -834,12 +742,44 @@ namespace ABC.Repositories
                 string surveyCountry = (await dbContext.Countries
                     .FirstOrDefaultAsync(c => c.Id.ToString() == survey.Country))?.ShortCode;
 
-                if (!string.Equals(surveyCountry, respondentCountry, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(surveyCountry, respondentCountry, StringComparison.OrdinalIgnoreCase) && speedersetting == true)
                 {
-                    string id = await SaveRejectedResponse(dto, partnerSurvey, "Disqualify", "Location Mismatched");
+                    string id = await SaveRejectedResponse(dto, survey.UniqueLink, partnerSurvey, "Disqualify", "Location Mismatched");
+                    if (id == "0")
+                    {
+                        result.Status = "0";
+                        result.ResponseUuid = existingCompleted.Id;
+                        result.ResponseLink = existingCompleted.ClientURL;
+                        result.Passcode = existingCompleted.passcode;
+                        result.Message = "No Link Available";
+                        return result;
+                    }
                     result.Status = "1";
                     result.ResponseLink = InternalResponseLink + id;
                     return Fail(result, "Location Mismatched");
+                }
+
+                // check if the ip address is duplicate
+                var ipCount = await dbContext.surveyResponses.CountAsync(sr =>
+                    sr.SurveyId == survey.Id 
+                     && sr.RespondentIP==dto.RespondentIP
+                    );
+
+                if (ipCount > 0)
+                {
+                    string id = await SaveRejectedResponse(dto, survey.UniqueLink, partnerSurvey, "Disqualify", "Duplicate IP Address");
+                    if (id == "0")
+                    {
+                        result.Status = "0";
+                        result.ResponseUuid = existingCompleted.Id;
+                        result.ResponseLink = existingCompleted.ClientURL;
+                        result.Passcode = existingCompleted.passcode;
+                        result.Message = "No Link Available";
+                        return result;
+                    }
+                    result.Status = "1";
+                    result.ResponseLink = InternalResponseLink + id;
+                    return Fail(result, "Duplicate IP Address");
                 }
 
                 // 4️⃣ QUOTA CHECK
@@ -850,7 +790,16 @@ namespace ABC.Repositories
 
                 if (partnerSurvey.Quota > 0 && completedCount >= partnerSurvey.Quota)
                 {
-                    string id = await SaveRejectedResponse(dto, partnerSurvey, "Quota full", "Quota overflow");
+                    string id = await SaveRejectedResponse(dto, survey.UniqueLink, partnerSurvey, "Quota full", "Quota overflow");
+                    if (id == "0")
+                    {
+                        result.Status = "0";
+                        result.ResponseUuid = existingCompleted.Id;
+                        result.ResponseLink = existingCompleted.ClientURL;
+                        result.Passcode = existingCompleted.passcode;
+                        result.Message = "No Link Available";
+                        return result;
+                    }
                     result.Status = "1";
                     result.ResponseLink = InternalResponseLink + id;
                     return Fail(result, "Quota full");
@@ -865,52 +814,90 @@ namespace ABC.Repositories
                 if (existingIncomplete != null)
                 {
                     existingIncomplete.StartedAt = DateTime.UtcNow;
+                    existingIncomplete.Answers = dto.Answers;
                     await dbContext.SaveChangesAsync();
 
-                    result.Status = "1";
+                    result.Status = "2";
                     result.ResponseUuid = existingIncomplete.RespondentIdInternal;
                     result.ResponseLink = existingIncomplete.ClientURL;
                     result.Passcode = existingIncomplete.passcode;
                     return result;
                 }
-
-                // 6️⃣ Create NEW response
-                var response = new SurveyResponse
+                if (survey.UniqueLink == true)
                 {
-                    Id = Guid.NewGuid().ToString(),
-                    SurveyId = survey.Id,
-                    PartnerId = partnerSurvey.PartnerId.ToString(),
-                    RespondentId = dto.RespondentId,
-                    RespondentIP = dto.RespondentIP,
-                    CreatedAt = DateTime.UtcNow,
-                    StartedAt = DateTime.UtcNow, // 🔥 for LOI
-                    AddedBy = dto.addedby,
-                    userIdFor = dto.addedby,
-                    passcode = Guid.NewGuid().ToString(),
-                    Answers = string.IsNullOrEmpty(dto.Answers) ? "" : dto.Answers,
-                    Status = "incomplete",
-                    ClientURL = ""
-                };
+                    //
+                    var existingResponse2 = await dbContext.surveyResponses
+                   .FirstOrDefaultAsync(sr =>
+                       sr.SurveyId == survey.Id && sr.Status == "incomplete"
+                   );
+                    if (existingResponse2 != null)
+                    {
+                        // Update the existing response with new details
+                        existingResponse2.userIdFor = dto.addedby;
+                        existingResponse2.ResponseDate = DateTime.UtcNow;
+                        existingResponse2.RespondentId = dto.RespondentId;
+                        existingResponse2.RespondentIP = dto.RespondentIP;
+                        existingResponse2.PartnerId = partnerSurvey.PartnerId.ToString();
+                        existingResponse2.StartedAt = DateTime.UtcNow;
+                        existingResponse2.CreatedAt = DateTime.UtcNow;
+                        //existingResponse2.PartnerId= dto.SurveyPartnerId.ToString();
+                        await dbContext.SaveChangesAsync();
 
-                await dbContext.AddAsync(response);
-                await dbContext.SaveChangesAsync();
+                        result.Status = "2";
+                        result.ResponseUuid = existingResponse2.RespondentIdInternal;
+                        result.ResponseLink = existingResponse2.ClientURL;
+                        result.Passcode = existingResponse2.passcode;
+                        return result;
+                    }
+                    else
+                    {
+                        result.Status = "0";
+                        result.Message = "Link Not Available";
+                        result.ResponseUuid = "";
+                        result.ResponseLink = "";
+                        result.Passcode = "";
+                        return result;
+                    }
+                }
+                else
+                {
+                    // 6️⃣ Create NEW response
+                    var response = new SurveyResponse
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        SurveyId = survey.Id,
+                        PartnerId = partnerSurvey.PartnerId.ToString(),
+                        RespondentId = dto.RespondentId,
+                        RespondentIP = dto.RespondentIP,
+                        CreatedAt = DateTime.UtcNow,
+                        StartedAt = DateTime.UtcNow, // 🔥 for LOI
+                        AddedBy = dto.addedby,
+                        userIdFor = dto.addedby,
+                        passcode = Guid.NewGuid().ToString(),
+                        Answers = string.IsNullOrEmpty(dto.Answers) ? "" : dto.Answers,
+                        Status = "incomplete",
+                        ClientURL = ""
+                    };
 
-                response.RespondentIdInternal = $"{survey.Name}{response.Gid:D6}";
-                await dbContext.SaveChangesAsync();
+                    await dbContext.AddAsync(response);
+                    await dbContext.SaveChangesAsync();
 
-                string clientLink = Regex.Replace(
-                    survey.ClientLink,
-                    @"[\{\[\<][^}\]>]+[\}\]\>]",
-                    response.RespondentIdInternal
-                );
+                    response.RespondentIdInternal = $"{survey.Name}{response.Gid:D6}";
+                    string clientLink = Regex.Replace(
+                        survey.ClientLink,
+                        @"[\{\[\<][^}\]>]+[\}\]\>]",
+                        response.RespondentIdInternal
+                    );
 
-                response.ClientURL = clientLink;
+                    response.ClientURL = clientLink;
+                    await dbContext.SaveChangesAsync();
 
-                result.Status = "1";
-                result.ResponseUuid = response.RespondentIdInternal;
-                result.ResponseLink = clientLink;
-                result.Passcode = response.passcode;
-                return result;
+                    result.Status = "2";
+                    result.ResponseUuid = response.RespondentIdInternal;
+                    result.ResponseLink = clientLink;
+                    result.Passcode = response.passcode;
+                    return result;
+                }
             }
             catch (Exception ex)
             {
@@ -1012,14 +999,17 @@ namespace ABC.Repositories
                                 var timeTaken = (DateTime.UtcNow - surveyResponse.CreatedAt).TotalMinutes;
                                 int LOI = surveyInst.LengthOfSurveyInMinutes;
 
-                                if (timeTaken < (LOI / 3.0))
+                                bool speederSettings = settings.IsSpeederApplied;
+
+                                if (timeTaken < (LOI / 3.0) && speederSettings == true)
                                 {
                                     surveyResponse.Status = "disqualify";
                                     surveyResponse.InternalStatus = "disqualify";
                                     surveyResponse.StatusNotes = "Speeder";
                                     redirectUrl = UpdateUidInUrl(partnerLinks.PartnerDisqualificationLink, surveyResponse.RespondentId);
                                 }
-                                redirectUrl = UpdateUidInUrl(partnerLinks.PartnerSuccessLink, surveyResponse.RespondentId);
+                                else
+                                    redirectUrl = UpdateUidInUrl(partnerLinks.PartnerSuccessLink, surveyResponse.RespondentId);
                                 break;
 
                             case "disqualify":
@@ -1137,30 +1127,46 @@ namespace ABC.Repositories
             }
             return reportsurvey;
         }
-        public async Task<object> GetIsSurveyPreScreeningAsync(string surveyId)
+        public async Task<SurveyPreScreeningResult> GetIsSurveyPreScreeningAsync(string surveyId)
         {
-            bool isSurveyPreScreening = false;
             try
             {
-                var partnerSurvey = await dbContext.partnerSurveys.FirstOrDefaultAsync(p => p.AutoNumber.ToString().ToLower() == surveyId.ToLower());
+                var partnerSurvey = await dbContext.partnerSurveys
+                    .FirstOrDefaultAsync(p => p.AutoNumber.ToString() == surveyId);
+
+                if (partnerSurvey == null)
+                {
+                    return new SurveyPreScreeningResult();
+                }
 
                 var survey = await dbContext.Surveys
-                    .FirstOrDefaultAsync(sr => sr.Id.ToString().ToLower() == partnerSurvey.SurveyUuid.ToString());
+                    .FirstOrDefaultAsync(s => s.Id == partnerSurvey.SurveyUuid);
 
-                if (survey != null && survey.PreScreener && partnerSurvey.PreScreener)
+                if (survey == null)
                 {
-                    bool hasPreScreeners = await dbContext.SurveyPreScreeners
-                        .AnyAsync(ps => ps.SurveyId.ToLower() == survey.Id.ToString().ToLower());
-
-                    isSurveyPreScreening = hasPreScreeners;
+                    return new SurveyPreScreeningResult();
                 }
-            }
-            catch (Exception ex)
-            {
-                // Optionally log exception
-            }
 
-            return isSurveyPreScreening;
+                bool hasPreScreeners = false;
+
+                if (survey.PreScreener && partnerSurvey.PreScreener)
+                {
+                    hasPreScreeners = await dbContext.SurveyPreScreeners
+                        .AnyAsync(ps => ps.SurveyId == survey.Id.ToString());
+                }
+
+                return new SurveyPreScreeningResult
+                {
+                    HasPreScreening = hasPreScreeners,
+                    HasInstruction = (bool)partnerSurvey.HasInstruction,
+                    InstructionText = partnerSurvey.InstructionText ?? ""
+                };
+            }
+            catch (Exception)
+            {
+                // log if needed
+                return new SurveyPreScreeningResult();
+            }
         }
 
         public async Task<object> SurveyAddPreScreenerAsync(PreScreenerAddDto preScreenerAddDto)
@@ -1240,7 +1246,12 @@ namespace ABC.Repositories
         public async Task<object> GetPartnersListAsync()
         {
             var clients = await dbContext.Clients
-                .Select(c => new { id = c.Id, name = c.Name })
+            .Where(c => c.ClientTypeId == Guid.Parse("2C638F09-DE07-4D4C-B180-AA560A766AE4"))
+            .Select(c => new
+            {
+                id = c.Id,
+                name = c.Name
+            })
             .ToListAsync();
 
             return new
@@ -1332,7 +1343,7 @@ namespace ABC.Repositories
                         Title = survey.Title,
                         Name = GenerateNextSurveyName(survey.Name),
                         Status = dbContext.MultiSelects
-                            .Where(m => m.SelectionType == "status" && m.Name == "draft")
+                            .Where(m => m.SelectionType == "status" && m.Name.ToLower() == "live")
                             .Select(m => m.Id)
                             .FirstOrDefault().ToString(),
                         Language = survey.Language,
@@ -1412,13 +1423,19 @@ namespace ABC.Repositories
                         });
                     }
 
+                    // Step 1: Get latest active/latest rate for old survey
+                    var latestRate = await dbContext.RateHistory
+                        .Where(x => x.EntityType == "Survey" && x.EntityId == survey.Id)
+                        .OrderByDescending(x => x.StartDate)   // latest by date
+                        .FirstOrDefaultAsync();
+
                     // -------- Survey rate --------
                     dbContext.RateHistory.Add(new RateHistory
                     {
                         Id = Guid.NewGuid(),
                         EntityType = "Survey",
                         EntityId = newSurvey.Id,
-                        Rate = survey.ClientRate,
+                        Rate = latestRate.Rate,
                         Currency = survey.CurrencyId,
                         StartDate = DateTime.UtcNow,
                         Note = "Initial survey rate (cloned)",
@@ -1481,8 +1498,6 @@ namespace ABC.Repositories
             // 5. Always return clone name with CL + next number
             return $"{baseName}CL{(maxSuffix + 1):D2}";
         }
-
-
         public async Task<PreScreenerSurveyDto> GetSurveyPreScreeningQuestAsync(string Id)
         {
             List<SurveyPreScreenerDto> PreScreener = new List<SurveyPreScreenerDto>();
@@ -1519,6 +1534,8 @@ namespace ABC.Repositories
                     SurveyId = survey?.Id.ToString(),
                     SurveyName = survey?.Name,
                     SurveyTitle = survey?.Title,
+                    ShowInstruction = partnerSurvey?.HasInstruction,
+                    instructionText = partnerSurvey?.InstructionText
                 };
             }
             catch (Exception ex)
@@ -1848,7 +1865,9 @@ namespace ABC.Repositories
                 dt.Columns.Add("ClientURL", typeof(string));               // nvarchar(max)
                 dt.Columns.Add("passcode", typeof(string));                // nvarchar(max) nullable
                 dt.Columns.Add("IsRecontact", typeof(bool));               // bit            
-                dt.Columns.Add("SurveyFileId", typeof(Guid));              // uniqueidentifier nullable// uniqueidentifier nullable
+                dt.Columns.Add("SurveyFileId", typeof(Guid));
+                dt.Columns.Add("RespondentIdInternal", typeof(string));
+                // uniqueidentifier nullable// uniqueidentifier nullable
 
                 using (StreamReader sr = new StreamReader(filePath))
                 {
@@ -1866,21 +1885,23 @@ namespace ABC.Repositories
                         // Example of how to add a row to the DataTable
                         DataRow row = dt.NewRow();
 
-                        string[] final_url = ReplaceGuidPlaceholders(line.Trim());
+                        //string[] final_url = ReplaceGuidPlaceholders(line.Trim());
+                        string[] final_url = line.Trim().Split(',');
 
                         row["Id"] = Guid.NewGuid();
                         row["SurveyId"] = surveyFileDto.SurveyId;
-                        row["RespondentId"] = final_url[1];
+                        row["RespondentId"] = "";
                         row["ResponseDate"] = DateTime.UtcNow;
                         row["Status"] = "incomplete";
                         row["Answers"] = "";
                         row["PartnerId"] = default_partner;
                         row["CreatedAt"] = DateTime.UtcNow;
                         row["AddedBy"] = surveyFileDto.UploadedBy;
-                        row["ClientURL"] = final_url[0];
+                        row["ClientURL"] = final_url[0] + final_url[1];
                         row["passcode"] = Guid.NewGuid();
                         row["IsRecontact"] = false;
                         row["SurveyFileId"] = surveyFileId;
+                        row["RespondentIdInternal"] = final_url[1];
 
                         dt.Rows.Add(row);
                     }
@@ -1908,6 +1929,7 @@ namespace ABC.Repositories
                         bulkCopy.ColumnMappings.Add("passcode", "passcode");
                         bulkCopy.ColumnMappings.Add("IsRecontact", "IsRecontact");
                         bulkCopy.ColumnMappings.Add("SurveyFileId", "SurveyFileId");
+                        bulkCopy.ColumnMappings.Add("RespondentIdInternal", "RespondentIdInternal");
                         bulkCopy.WriteToServer(dt);
                     }
                 }
@@ -1936,7 +1958,7 @@ namespace ABC.Repositories
         {
             var stamp = DateTime.UtcNow.ToString("yyMMddHHmm"); // e.g. 2510041912
             var rnd = Math.Abs(Guid.NewGuid().GetHashCode()) % 10000;
-            return $"PDR{stamp}{rnd:D4}";
+            return $"IG{stamp}{rnd:D4}";
         }
         public async Task<List<SurveyFile>> GetSurveyFilesAsync(string SurveyId)
         {
@@ -1986,6 +2008,18 @@ namespace ABC.Repositories
 
             return updatedUrl;
         }
+        public async Task<List<object>> GetSurveyReportList()
+        {
+            return await dbContext.Surveys
+                .Where(x => x.ParentId == null)
+                .Select(x => new
+                {
+                    id = x.Id,
+                    surveyName = x.Name
+                })
+                .Cast<object>()
+                .ToListAsync();
+        }
 
         private SurveyResponseResultDto Fail(SurveyResponseResultDto dto, string status)
         {
@@ -1999,40 +2033,456 @@ namespace ABC.Repositories
 
         private async Task<string> SaveRejectedResponse(
             SurveyResponseDto dto,
+            bool IsUniqueLink,
             PartnerSurvey partnerSurvey,
             string status,
             string internalReason)
         {
-            var rejected = new SurveyResponse
+            if (IsUniqueLink)
             {
-                Id = Guid.NewGuid().ToString(),
-                SurveyId = partnerSurvey.SurveyUuid,
-                PartnerId = partnerSurvey.PartnerId.ToString(),
-                RespondentId = dto.RespondentId,
-                RespondentIP = dto.RespondentIP,
-                Status = "incomplete",
-                StatusNotes = internalReason,
-                CreatedAt = DateTime.UtcNow,
-                StartedAt = DateTime.UtcNow,
-                InternalStatus = status,
-                Answers = string.IsNullOrEmpty(dto.Answers) ? "" : dto.Answers,
-                ClientURL = ""
+                // find surveyresponse
+                //with same surveyid and respondentid and mark as rejected
+                var existingResponse = await dbContext.surveyResponses
+                    .FirstOrDefaultAsync(r =>
+                        r.SurveyId.ToString().ToLower() == partnerSurvey.SurveyUuid.ToString().ToLower()
+                        && r.Status.ToString().ToLower() == "incomplete"
+                        );
+                if (existingResponse != null)
+                {
+                    existingResponse.RespondentId = dto.RespondentId;
+                    existingResponse.RespondentIP = dto.RespondentIP;
+                    existingResponse.StatusNotes = internalReason;
+                    existingResponse.InternalStatus = status;
+                    existingResponse.PartnerId = partnerSurvey.PartnerId.ToString();
+                    existingResponse.Answers = string.IsNullOrEmpty(dto.Answers) ? "" : dto.Answers;
+                    existingResponse.UpdatedAt = DateTime.UtcNow;
+                    existingResponse.StartedAt = DateTime.UtcNow;
+                    await dbContext.SaveChangesAsync();
+                    return existingResponse.RespondentIdInternal;
+                }
+                else
+                {
+                    return "0";
+
+                }
+            }
+            else
+            {
+                var rejected = new SurveyResponse
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    SurveyId = partnerSurvey.SurveyUuid,
+                    PartnerId = partnerSurvey.PartnerId.ToString(),
+                    RespondentId = dto.RespondentId,
+                    RespondentIP = dto.RespondentIP,
+                    Status = "incomplete",
+                    StatusNotes = internalReason,
+                    CreatedAt = DateTime.UtcNow,
+                    StartedAt = DateTime.UtcNow,
+                    InternalStatus = status,
+                    Answers = string.IsNullOrEmpty(dto.Answers) ? "" : dto.Answers,
+                    ClientURL = ""
+                };
+                try
+                {
+                    await dbContext.surveyResponses.AddAsync(rejected);
+                    await dbContext.SaveChangesAsync();
+
+                    rejected.RespondentIdInternal = $"{dto.SurveyName}{rejected.Gid:D6}";
+                    await dbContext.SaveChangesAsync();
+
+                }
+                catch (Exception ex)
+                {
+
+                }
+                return rejected.RespondentIdInternal;
+
+            }
+        }
+
+        public async Task<List<VendorAllocationDto>> VendorAllocationHistory(
+GenerateVendorAllocationRequest request)
+        {
+            var ParentSurvey = dbContext.Surveys
+            .FirstOrDefault(x => x.Id == request.SurveyId);
+
+            var surveyIds = await dbContext.Surveys
+            .Where(x => x.Id == request.SurveyId ||
+            x.ParentId == request.SurveyId)
+            .Select(x => x.Id)
+            .ToListAsync();
+
+            var vendorMappings = await dbContext.partnerSurveys
+                .Where(x => x.SurveyUuid == request.SurveyId)
+                .ToListAsync();
+
+            if (!vendorMappings.Any())
+                return new List<VendorAllocationDto>();
+
+            var partnerIds = vendorMappings
+                .Select(x => x.PartnerId)
+                .ToList();
+
+            var clients = await dbContext.Clients
+                .Where(x => partnerIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id);
+
+            var result = new List<VendorAllocationDto>();
+            //const decimal deductionPercentage = 10m;
+
+            int deductionPercentage = settings.IdsDeducted;
+
+            foreach (var item in vendorMappings)
+            {
+                var responses = await (
+                        from sr in dbContext.surveyResponses
+                        join s in dbContext.Surveys
+                            on sr.SurveyId equals s.Id
+                        join c in dbContext.Countries
+                            on s.Country equals c.Id.ToString()
+                        join m in dbContext.MultiSelects
+                            on s.Language equals m.Id.ToString()
+                        where surveyIds.Contains(sr.SurveyId)
+                            && sr.PartnerId == item.PartnerId.ToString()
+                            && request.RespondentIds.Contains(sr.RespondentIdInternal)
+                            && sr.Status == "success"
+                        select new
+                        {
+                            sr.RespondentId,
+                            SurveyName = s.Name,
+                            Country = c.ShortCode,
+                            Language = m.Name
+                        })
+                        .ToListAsync();
+
+                var idsCount = responses.Count;
+
+                var finalIdsCount = (int)Math.Round(
+                    idsCount * (100m - deductionPercentage) / 100m,
+                    MidpointRounding.AwayFromZero);
+
+                // Allocate only the required number of IDs
+                var allocatedIds = responses
+                    .Take(finalIdsCount)
+                    .Select(x => new RespondentAllocationDto
+                    {
+                        RespondentId = x.RespondentId,
+                        SurveyName = x.SurveyName,
+                        Country = x.Country,
+                        Language = x.Language
+                    })
+                    .ToList();
+
+
+                var emailHistory = await dbContext.vendorAllocationEmailHistories
+                    .FirstOrDefaultAsync(x =>
+                        x.SurveyId == request.SurveyId &&
+                        x.VendorId == item.PartnerId && x.IsSent == true);
+
+
+                result.Add(new VendorAllocationDto
+                {
+                    Id = item.Id.ToString(),
+                    VendorId = item.PartnerId,
+                    SurveyId = request.SurveyId.ToString(),
+                    VendorName = clients[item.PartnerId].Name,
+                    PONumber = emailHistory?.PONumber ?? $"{ParentSurvey.Name}/PO{Random.Shared.Next(1000, 9999)}/{DateTime.UtcNow:yyyyMMdd}",
+                    IdsCount = finalIdsCount,
+                    RespondentIds = allocatedIds,
+                });
+            }
+
+            return result;
+        }
+
+        public async Task<List<VendorAllocationDto>> GenerateVendorAllocation(
+GenerateVendorAllocationRequest request)
+        {
+            var ParentSurvey = dbContext.Surveys
+            .FirstOrDefault(x => x.Id == request.SurveyId);
+
+            var surveyIds = await dbContext.Surveys
+            .Where(x => x.Id == request.SurveyId ||
+            x.ParentId == request.SurveyId)
+            .Select(x => x.Id)
+            .ToListAsync();
+
+            var vendorMappings = await dbContext.partnerSurveys
+                .Where(x => x.SurveyUuid == request.SurveyId)
+                .ToListAsync();
+
+            if (!vendorMappings.Any())
+                return new List<VendorAllocationDto>();
+
+            var partnerIds = vendorMappings
+                .Select(x => x.PartnerId)
+                .ToList();
+
+            var clients = await dbContext.Clients
+                .Where(x => partnerIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id);
+
+            var result = new List<VendorAllocationDto>();
+            //const decimal deductionPercentage = 10m;
+
+            int deductionPercentage = settings.IdsDeducted;
+
+            foreach (var item in vendorMappings)
+            {
+                #region Response related data
+                int finalIdsCount = 0;
+                List<RespondentAllocationDto> allocatedIds = new();
+
+                if (request.GenerateAllocation)
+                {
+                    var responses = await (
+                        from sr in dbContext.surveyResponses
+                        join s in dbContext.Surveys
+                            on sr.SurveyId equals s.Id
+                        join c in dbContext.Countries
+                            on s.Country equals c.Id.ToString()
+                        join m in dbContext.MultiSelects
+                            on s.Language equals m.Id.ToString()
+                        where surveyIds.Contains(sr.SurveyId)
+                            && sr.PartnerId == item.PartnerId.ToString()
+                            && request.RespondentIds.Contains(sr.RespondentIdInternal)
+                            && sr.Status == "success"
+                        select new
+                        {
+                            sr.RespondentId,
+                            SurveyName = s.Name,
+                            Country = c.ShortCode,
+                            Language = m.Name
+                        })
+                        .ToListAsync();
+
+                    var idsCount = responses.Count;
+
+                    finalIdsCount = (int)Math.Round(
+                        idsCount * (100m - deductionPercentage) / 100m,
+                        MidpointRounding.AwayFromZero);
+
+                    allocatedIds = responses
+                        .Take(finalIdsCount)
+                        .Select(x => new RespondentAllocationDto
+                        {
+                            RespondentId = x.RespondentId,
+                            SurveyName = x.SurveyName,
+                            Country = x.Country,
+                            Language = x.Language
+                        })
+                        .ToList();
+                }
+                #endregion
+
+                #region Partner PO Number and Email History
+
+                if (item.PONumber == null || item.PONumber == "")
+                {
+                    item.PONumber = $"{ParentSurvey.Name}/PO{Random.Shared.Next(1000, 9999)}/{DateTime.UtcNow:yyyyMMdd}";
+                    await dbContext.SaveChangesAsync();
+                }
+
+
+                var emailHistories = await dbContext.vendorAllocationEmailHistories
+                        .Where(x =>
+                            x.SurveyId == request.SurveyId &&
+                            x.VendorId == item.PartnerId &&
+                            x.IsSent)
+                        .OrderByDescending(x => x.SentDate)
+                        .Select(x => new VendorMailHistoryDto
+                        {
+                            Id = x.Id,
+                            SentDate = x.SentDate ?? DateTime.MinValue,
+                            Subject = x.Subject,
+                            Emails = x.Emails,
+                            Body = x.Body,
+                            IsSent = x.IsSent,
+
+                            Attachments = dbContext.VendorAllocationEmailAttachments
+                                .Where(a => a.VendorAllocationEmailHistoryId == x.Id)
+                                .Select(a => new VendorMailAttachmentDto
+                                {
+                                    Id = a.Id,
+                                    FileName = a.FileName,
+                                    ContentType = a.ContentType,
+                                    IsSystemGenerated = a.IsSystemGenerated
+                                })
+                                .ToList()
+                        })
+                        .ToListAsync();
+
+                #endregion
+
+                result.Add(new VendorAllocationDto
+                {
+                    Id = item.Id.ToString(),
+                    VendorId = item.PartnerId,
+                    SurveyId = request.SurveyId.ToString(),
+                    VendorName = clients[item.PartnerId].Name,
+                    PONumber = item.PONumber,
+                    IdsCount = finalIdsCount,
+                    RespondentIds = allocatedIds,
+                    MailHistory = emailHistories
+                });
+            }
+
+            return result;
+        }
+
+        public async Task<bool> SendVendorAllocationX(SendVendorAllocationRequest request)
+        {
+            var history = new VendorAllocationEmailHistory
+            {
+                Id = Guid.NewGuid(),
+                SurveyId = request.SurveyId,
+                VendorId = request.VendorId,
+                VendorName = request.VendorName,
+                PONumber = request.PONumber,
+                Emails = request.Emails,
+                Subject = request.Subject,
+                Body = request.Body,
+                CreatedDate = DateTime.UtcNow,
+                IsSent = false
             };
             try
             {
-                await dbContext.surveyResponses.AddAsync(rejected);
+                dbContext.vendorAllocationEmailHistories.Add(history);
+
                 await dbContext.SaveChangesAsync();
 
-                rejected.RespondentIdInternal = $"{dto.SurveyName}{rejected.Gid:D6}";
+
+
+                await emailService.SendEmailAsync(
+                    request.Emails,
+                    request.Subject,
+                    request.Body);
+
+                history.IsSent = true;
+                history.SentDate = DateTime.UtcNow;
+
                 await dbContext.SaveChangesAsync();
 
+                return true;
             }
             catch (Exception ex)
             {
+                //history.IsSent = false;
+                history.IsSent = true;
+                history.ErrorMessage = ex.Message;
 
+                await dbContext.SaveChangesAsync();
+
+                throw;
             }
-            return rejected.RespondentIdInternal;
 
+        }
+        public async Task<bool> SendVendorAllocation(SendVendorAllocationRequest request)
+        {
+            var history = new VendorAllocationEmailHistory
+            {
+                Id = Guid.NewGuid(),
+                SurveyId = request.SurveyId,
+                VendorId = request.VendorId,
+                VendorName = request.VendorName,
+                PONumber = request.PONumber,
+                Emails = request.Emails,
+                Subject = request.Subject,
+                Body = request.Body,
+                CreatedDate = DateTime.UtcNow,
+                IsSent = false
+            };
+
+            try
+            {
+                dbContext.vendorAllocationEmailHistories.Add(history);
+                await dbContext.SaveChangesAsync();
+
+                //----------------------------------------------------------
+                // Prepare Attachments
+                //----------------------------------------------------------
+
+                var attachments = new List<EmailAttachment>();
+
+                
+                //----------------------------------------------------------
+                // 2. User Uploaded Files
+                //----------------------------------------------------------
+
+                if (request.Files != null)
+                {
+                    foreach (var file in request.Files)
+                    {
+                        if (file.Length == 0)
+                            continue;
+
+                        using var ms = new MemoryStream();
+                        await file.CopyToAsync(ms);
+                        var bytes = ms.ToArray();
+
+                        attachments.Add(new EmailAttachment
+                        {
+                            FileName = file.FileName,
+                            ContentType = file.ContentType,
+                            Content = bytes
+                        });
+                        
+                        dbContext.VendorAllocationEmailAttachments.Add(
+                            new VendorAllocationEmailAttachment
+                            {
+                                Id = Guid.NewGuid(),
+                                VendorAllocationEmailHistoryId = history.Id,
+                                FileName = file.FileName,
+                                ContentType = file.ContentType,
+                                Content = bytes,
+                                IsSystemGenerated = file.FileName == request.SystemAttachmentName
+                            });
+                    }
+                }
+
+                await dbContext.SaveChangesAsync();
+
+                //----------------------------------------------------------
+                // Send Mail
+                //----------------------------------------------------------
+
+                await emailService.SendEmailAsync(
+                    request.Emails,
+                    request.Subject,
+                    request.Body,
+                    attachments);
+
+                history.IsSent = true;
+                history.SentDate = DateTime.UtcNow;
+
+                await dbContext.SaveChangesAsync();
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                history.IsSent = false;
+                history.ErrorMessage = ex.ToString();
+
+                await dbContext.SaveChangesAsync();
+
+                throw;
+            }
+        }
+        public async Task<EmailAttachmentDownloadDto?> DownloadAttachment(Guid id)
+        {
+            var attachment = await dbContext.VendorAllocationEmailAttachments
+                .Where(x => x.Id == id)
+                .Select(x => new EmailAttachmentDownloadDto
+                {
+                    Content = x.Content,
+                    ContentType = x.ContentType,
+                    FileName = x.FileName
+                })
+                .FirstOrDefaultAsync();
+
+            return attachment;
         }
 
     }

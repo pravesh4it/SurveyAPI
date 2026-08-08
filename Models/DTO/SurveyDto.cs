@@ -26,5 +26,7 @@ namespace ABC.Models.DTO
         public string LastCompleted { get; set; } // Nullable to allow for no completion date
         public int DropOuts { get; set; } // Number of dropouts
         public string? Statics { get; set; }
+
+        public string? SurveyUsers { get; set; }
     }
 }

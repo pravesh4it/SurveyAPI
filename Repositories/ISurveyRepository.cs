@@ -22,7 +22,7 @@ namespace ABC.Repositories
         Task<SurveyEditDto> GetSurveyByIdAsync(Guid surveyId);
         Task<List<Guid>> CloneAsync(CloneSurveyDto cloneSurveyDto);
         Task<object> GetSurveyPreScreeningAsync(string surveyId);
-        Task<object> GetIsSurveyPreScreeningAsync(string surveyId);
+        Task<SurveyPreScreeningResult> GetIsSurveyPreScreeningAsync(string surveyId);
         Task<PreScreenerSurveyDto> GetSurveyPreScreeningQuestAsync(string Id);
         Task<object> SurveyAddPreScreenerAsync(PreScreenerAddDto preScreenerAddDto);
         Task<QualifyingDto> HasDisqualifyingAnswerAsync(List<ResponseDto> responses);
@@ -37,6 +37,15 @@ namespace ABC.Repositories
         Task<bool> DeleteSurveyPartnerAsync(Guid PartnerRowId);
         Task<bool> DeleteQuestionAsync(Guid QuestionId);
         Task<object> SurveyUpdatePreScreenerAsync(PreScreenerUpdateDto dto);
+        Task<List<object>> GetSurveyReportList();
+        Task<List<VendorAllocationDto>> GenerateVendorAllocation(
+        GenerateVendorAllocationRequest request);
+        Task<bool> SendVendorAllocation(
+            SendVendorAllocationRequest request);
+        Task<List<VendorAllocationDto>> VendorAllocationHistory(
+GenerateVendorAllocationRequest request);
+        Task<EmailAttachmentDownloadDto?> DownloadAttachment(Guid id);
+        Task<SurveySearchResponse> GetSurveyListAsync(SurveySearchRequest request);
 
     }
 }

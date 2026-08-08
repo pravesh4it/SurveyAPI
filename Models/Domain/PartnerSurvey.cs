@@ -20,6 +20,10 @@ namespace ABC.Models.Domain
         public string AddedBy { get; set; } // Identifier for the user who added it
         public Guid SurveyUuid { get; set; } // Unique identifier for the survey
         public bool PreScreener { get; set; }
+        // NEW FIELDS
+        public bool? HasInstruction { get; set; }
+        public string? InstructionText { get; set; }
+        public string? PONumber { get; set; }
 
         // Constructor
         public PartnerSurvey()

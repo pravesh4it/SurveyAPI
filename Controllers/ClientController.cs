@@ -116,6 +116,7 @@ namespace ABC.Controllers
 
         // DELETE: api/Client/{id}
         [HttpDelete("{id}")]
+        [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> Delete(Guid id)
         {
             try

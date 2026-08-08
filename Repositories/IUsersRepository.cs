@@ -17,5 +17,6 @@ namespace ABC.Repositories
         Task<UserProfile> GetUserProfileAsync(string user_id);
         Task<UserAdminProfileDto> GetAdminProfileAsync(string user_id);
         Task<bool> UpdateUserAsync(UserUpdateModel model);
+        Task<MailQueue> AddEmailResetAsync(string Email, string AspNetUserId);
     }
 }

@@ -2,6 +2,7 @@
 using ABC.Models.DTO;
 using ABC.Repositories;
 using AutoMapper;
+using DocumentFormat.OpenXml.InkML;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -151,7 +152,7 @@ namespace ABC.Controllers
             {
                 surveyResponseDto.Qualifying = false;
                 SurveyResponseResultDto surveyResponseResultDto = await surveyRepository.SurveyAddResponseAsync(surveyResponseDto);
-                if (surveyResponseResultDto.Status == "1")
+                if (surveyResponseResultDto.Status == "2" || surveyResponseResultDto.Status == "1")
                 {
                     return Ok(surveyResponseResultDto); // success
                 }
@@ -203,11 +204,12 @@ namespace ABC.Controllers
             var data = await surveyRepository.GetSurveyClientPartnersAsync(id);
             return Ok(data);
         }
-        [HttpGet("survey-list")]
-        public async Task<IActionResult> GetSurveyList()
+        [HttpPost("survey-list")]
+        public async Task<IActionResult> GetSurveyList([FromBody] SurveySearchRequest request)
         {
-            var data = await surveyRepository.GetSurveyListAsync();
-            return Ok(data);
+            var result = await surveyRepository.GetSurveyListAsync(request);
+
+            return Ok(result);
         }
         [HttpGet("survey-partners-list/{id}")]
         public async Task<IActionResult> GetSurveyPartnersList(Guid id)
@@ -282,6 +284,7 @@ namespace ABC.Controllers
         }
         // DELETE: api/Client/{id}
         [HttpDelete("{id}")]
+        [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> Delete(Guid id)
         {
             try
@@ -358,13 +361,13 @@ namespace ABC.Controllers
             surveyResponseDto.Answers = qualifying.Answers;
             surveyResponseDto.Qualifying = qualifying.Qualifying;
             SurveyResponseResultDto surveyResponseResultDto = await surveyRepository.SurveyAddResponseAsync(surveyResponseDto);
-            if (surveyResponseResultDto.Status == "1")
+            if (surveyResponseResultDto.Status == "1" || surveyResponseResultDto.Status=="2")
             {
                 return Ok(surveyResponseResultDto); // success
             }
             else
             {
-                return BadRequest(new { message = surveyResponseResultDto.Status, details = surveyResponseResultDto.Status });
+                return BadRequest(new { message = surveyResponseResultDto.Status, details = surveyResponseResultDto.Message });
             }
 
         }
@@ -501,6 +504,61 @@ namespace ABC.Controllers
             var result = await surveyRepository.SurveyUpdatePreScreenerAsync(dto);
             return Ok(result);
         }
+        [HttpGet("report-list")]
+        public async Task<IActionResult> GetSurveyReportList()
+        {
+            var result = await surveyRepository.GetSurveyReportList();
+            return Ok(result);
+        }
+        [HttpPost("generate")]
+        public async Task<IActionResult> Generate([FromBody] GenerateVendorAllocationRequest request)
+        {
+            var data =
+                await surveyRepository
+                    .GenerateVendorAllocation(request);
 
+            return Ok(new
+            {
+                errors = (object)null,
+                result = new
+                {
+                    data
+                }
+            });
+        }
+
+        [HttpPost("send")]
+        public async Task<IActionResult> Send([FromForm] SendVendorAllocationRequest request)
+        {
+            var result =
+                await surveyRepository
+                    .SendVendorAllocation(request);
+
+            return Ok(new
+            {
+                errors = (object)null,
+                result = new
+                {
+                    data = result
+                }
+            });
+        }
+
+        [HttpGet]
+        [Route("DownloadAttachment/{id}")]
+        public async Task<IActionResult> DownloadAttachment(Guid id)
+        {
+            var attachment = await surveyRepository.DownloadAttachment(id);
+
+            if (attachment == null)
+            {
+                return NotFound();
+            }
+
+            return File(
+                attachment.Content,
+                attachment.ContentType,
+                attachment.FileName);
+        }
     }
 }

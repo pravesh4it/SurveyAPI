@@ -163,6 +163,29 @@ namespace ABC.Repositories
             return mailQueue;
         }
 
+        public async Task<MailQueue> AddEmailResetAsync(string Email, string AspNetUserId)
+        {
+            MailQueue mailQueue = new MailQueue();
+            try
+            {
+                var objDictionary = new Dictionary<string, string>
+                {
+                    { "@Email", Email },
+                    { "@AspNetUserId", AspNetUserId }
+                };
+
+                DataTable dt = await _dataManager.GetDataTableAsync("[usp_ResetSendEmail]", objDictionary);
+                if (dt.Rows.Count > 0)
+                {
+                    mailQueue = dt.ToSingle<MailQueue>();
+                }
+            }
+            catch (Exception ex)
+            {
+
+            }
+            return mailQueue;
+        }
         public async Task<MailQueue> AddEmailRegisterUserAsync(string Email, string AspNetUserId)
         {
             MailQueue mailQueue = new MailQueue();

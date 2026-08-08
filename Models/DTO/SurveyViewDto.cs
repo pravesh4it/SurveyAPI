@@ -40,6 +40,7 @@
         public string LastCompleted { get; set; } // Nullable to allow for no completion date
         public int Clicks { get; set; }
         public string? Statics { get; set; }
+        public string? RemainingDays { get; set; }
 
 
     }

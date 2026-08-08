@@ -36,15 +36,27 @@ namespace ABC.Repositories
                     select s
                     ).CountAsync();
 
-            // Responses
+            var utcToday = DateTime.UtcNow.Date;
+            var utcTomorrow = utcToday.AddDays(1);
+
             var totals = await dbContext.surveyResponses
                 .GroupBy(r => 1)
                 .Select(g => new
                 {
                     total = g.Count(),
-                    completes = g.Count(r => r.Status == "success")
+                    completes = g.Count(r => r.Status == "success"),
+                    todayCompletes = g.Count(r =>
+                        r.Status == "success" &&
+                        r.UpdatedAt >= utcToday &&
+                        r.UpdatedAt < utcTomorrow)
                 })
-                .FirstOrDefaultAsync() ?? new { total = 0, completes = 0 };
+                .FirstOrDefaultAsync()
+                ?? new
+                {
+                    total = 0,
+                    completes = 0,
+                    todayCompletes = 0
+                };
 
             // Response Rate: completes / started (exclude never-started)
             // Consider "started" as all except null (or count all records)
@@ -77,7 +89,9 @@ namespace ABC.Repositories
                 ClosedSurveys = totalSurveys - (activeCount + DraftCount),
                 TotalResponses = totals.completes, // show completes; change if you want all
                 ResponseRate = Math.Round(responseRate, 2),
-                StatusDistribution = statusCounts
+                StatusDistribution = statusCounts,
+                TotalTodayResponses = totals.todayCompletes
+
             };
         }
 

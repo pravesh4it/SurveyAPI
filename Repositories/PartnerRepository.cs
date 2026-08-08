@@ -52,6 +52,12 @@ namespace ABC.Repositories
                 existingClient.ContactPerson = client.ContactPerson;
                 existingClient.ContactNo1 = client.ContactNo1;
 
+                existingClient.DisqualificationLink = client.DisqualificationLink;
+                existingClient.PausedLink = client.PausedLink;
+                existingClient.QuotaFullLink = client.QuotaFullLink;
+                existingClient.SecurityFailLink = client.SecurityFailLink;
+                existingClient.SuccessLink = client.SuccessLink;
+                
                 dbContext.Clients.Update(existingClient);
                 await dbContext.SaveChangesAsync();
                 return existingClient;

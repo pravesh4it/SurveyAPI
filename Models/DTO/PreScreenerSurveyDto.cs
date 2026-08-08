@@ -6,5 +6,9 @@
         public string SurveyName { get; set; }
         public string SurveyTitle { get; set; }
         public List<SurveyPreScreenerDto> surveyPreScreenerDtos { get; set; }
+
+        public bool? ShowInstruction { get; set; }
+        public string? instructionText { get; set; }
+
     }
 }

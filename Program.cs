@@ -19,7 +19,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowReactApp",
         policy =>
         {
-            policy.WithOrigins("http://localhost:3000", "https://reward.prodynamicresearch.com", "https://maxfusion.space", "http://localhost:5173", "https://portal.prodynamicresearch.com") // React app URL
+            policy.WithOrigins("http://localhost:3000", "https://reward.prodynamicresearch.com", "https://maxfusion.space", "http://localhost:5173", "https://portal.prodynamicresearch.com", "https://online.prodynamicresearch.com") // React app URL
                   .AllowAnyHeader()
                   .AllowAnyMethod();
         });
@@ -83,6 +83,7 @@ builder.Services.AddScoped<IUsersRepository, UsersRepository>();
 builder.Services.AddScoped<ISurveyRepository, SurveyRepository>();
 builder.Services.AddScoped<DataManager>();
 builder.Services.AddScoped<ClientSetting>();
+builder.Services.AddScoped<Settings>();
 builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
 builder.Services.AddScoped<IMultiselectRepository, MultiselectRepository>();
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("EmailSettings"));
@@ -147,6 +148,7 @@ builder.Services
 
 builder.Services.Configure<ClientSetting>(builder.Configuration.GetSection("ClientSetting"));
 builder.Services.Configure<URLSettings>(builder.Configuration.GetSection("URLSettings"));
+builder.Services.Configure<Settings>(builder.Configuration.GetSection("Settings"));
 var app = builder.Build();
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

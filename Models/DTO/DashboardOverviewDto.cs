@@ -9,6 +9,7 @@
         public int TotalResponses { get; set; }
         public double ResponseRate { get; set; } // 0-100
         public List<StatusCountDto> StatusDistribution { get; set; } = new();
+        public int TotalTodayResponses { get; set; }
     }
     
     public class StatusCountDto

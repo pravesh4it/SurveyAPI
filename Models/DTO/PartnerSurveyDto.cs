@@ -25,5 +25,11 @@
         public string LastCompleted { get; set; }
 
         public string Statics { get; set; }
+
+        public bool? ShowInstruction { get; set; }
+        public string? InstructionText { get; set; }
+
+        public int? Clicks { get; set; }
+
     }
 }

@@ -2,6 +2,7 @@
 using ABC.Models.Domain;
 using ABC.Models.DTO;
 using ABC.Repositories;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -107,6 +108,7 @@ namespace ABC.Controllers
         }
         
         [HttpDelete("DeleteUser/{userId}")]
+        [Authorize(Roles = "SuperAdmin")]
         public async Task<IActionResult> DeleteUser(string userId)
         {
             try
@@ -464,5 +466,47 @@ namespace ABC.Controllers
             }
         }
 
+        [HttpPost]
+        [Route("forgot-password")]
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(request.Email))
+                {
+                    return BadRequest("Email is required");
+                }
+
+                // Check if user exists
+                var user = await userManager.FindByEmailAsync(request.Email);
+
+                if (user == null)
+                {
+                    return BadRequest("User with this email does not exist");
+                }
+                // Store email in queue table (your existing logic)
+                var mailqueue = await usersRepository.AddEmailResetAsync(user.Email, user.Id);
+
+                // Send email
+                await _emailService.SendEmailAsync(
+                    mailqueue.ToMail,
+                    mailqueue.Subject,
+                    mailqueue.content
+                );
+
+                return Ok(new
+                {
+                    message = "Password reset instructions sent to email"
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new
+                {
+                    message = "Something went wrong",
+                    error = ex.Message
+                });
+            }
+        }
     }
 }

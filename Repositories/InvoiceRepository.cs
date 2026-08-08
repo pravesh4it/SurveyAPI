@@ -183,7 +183,7 @@ namespace ABC.Repositories
         {
             var stamp = DateTime.UtcNow.ToString("yyMMddHHmm"); // e.g. 2510041912
             var rnd = Math.Abs(Guid.NewGuid().GetHashCode()) % 10000;
-            return $"PDR{stamp}-{rnd:D4}";
+            return $"IG{stamp}-{rnd:D4}";
         }
 
     }
